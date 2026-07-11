@@ -1,8 +1,10 @@
-"""Résolution HTTP du tenant (décision D5 Phase 1).
+"""Résolution HTTP du tenant : sous-domaine x session x membership.
 
-La dépendance existe et est testée, mais AUCUNE route métier publique ne
-l'expose tant que l'auth n'existe pas (elle révélerait l'existence des tenants).
-La Phase 2 y branchera le croisement session utilisateur x membership.
+Phase 2 (T7) : le TODO Phase 1 est levé — la dépendance croise désormais le
+tenant du sous-domaine avec la session utilisateur et le membership.
+L'invariant racine n°1 est complet : contexte tenant = sous-domaine x session
+x membership. 404 si tenant inconnu/non opérationnel, 403 si suspendu,
+401 si non authentifié, 403 si authentifié mais non membre.
 """
 
 from collections.abc import AsyncIterator
@@ -13,7 +15,9 @@ from fastapi import Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.deps import CurrentAuth, current_auth_or_none
 from app.core.db import get_control_session
+from app.directory.models import Membership
 from app.tenancy.context import TenantContext, pop_tenant, push_tenant
 from app.tenancy.models import SLUG_RE, Tenant, TenantState
 
@@ -31,12 +35,9 @@ def extract_slug(host_header: str) -> str | None:
 async def resolve_tenant(
     request: Request,
     session: Annotated[AsyncSession, Depends(get_control_session)],
+    auth: Annotated[CurrentAuth | None, Depends(current_auth_or_none)],
 ) -> AsyncIterator[TenantContext]:
-    """Sous-domaine → tenant du catalogue → contexte tenant posé pour la requête.
-
-    404 si inconnu ou non opérationnel, 403 si suspendu.
-    TODO Phase 2 : croiser avec la session utilisateur et le membership.
-    """
+    """Sous-domaine → tenant du catalogue → membership → contexte tenant posé."""
     slug = extract_slug(request.headers.get("host", ""))
     if slug is None:
         raise HTTPException(status_code=404, detail="Tenant introuvable")
@@ -47,12 +48,23 @@ async def resolve_tenant(
     if tenant.state is TenantState.SUSPENDED:
         raise HTTPException(status_code=403, detail="Tenant suspendu")
 
+    if auth is None:
+        raise HTTPException(status_code=401, detail="Authentification requise")
+    membership = await session.scalar(
+        select(Membership).where(
+            Membership.user_id == auth.user.id, Membership.tenant_id == tenant.id
+        )
+    )
+    if membership is None:
+        raise HTTPException(status_code=403, detail="Accès refusé à ce tenant")
+
     ctx = TenantContext(
         tenant_id=tenant.id,
         slug=tenant.slug,
         state=tenant.state,
         db_name=tenant.db_name,
         db_host=tenant.db_host,
+        role=membership.role,
     )
     token = push_tenant(ctx)
     structlog.contextvars.bind_contextvars(tenant=ctx.slug)

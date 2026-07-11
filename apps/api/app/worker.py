@@ -16,7 +16,14 @@ celery_app.conf.update(
     accept_content=["json"],
     timezone="UTC",
     enable_utc=True,
+    beat_schedule={
+        # Purge des sessions/challenges/invitations expirés (Phase 2 T9).
+        "auth-purge-expired": {"task": "core.auth.purge_expired", "schedule": 3600.0},
+    },
 )
+
+# Les tâches déclarées par module (@shared_task) se rattachent à l'app par import.
+import app.auth.tasks  # noqa: E402, F401  # pyright: ignore[reportUnusedImport]
 
 
 @celery_app.task(name="core.ping")

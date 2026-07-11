@@ -7,12 +7,13 @@ Voir le `CLAUDE.md` racine pour les invariants globaux. Spécificités backend :
 Un package Python par module métier sous `app/` :
 
 ```
-app/core/      # config (pydantic-settings), logging (structlog + request_id), db control-plane
+app/core/      # config, logging, db control-plane, crypto (KeyProvider), csrf, mailer
 app/health/    # sonde de vie
 app/tenancy/   # catalogue, contexte tenant, engine manager, migrations runner, provisioning
-app/directory/ # identités globales (users) + memberships — l'auth arrive en Phase 2
-app/cli.py     # CLI d'administration `saas` (tenant create/list/retry-provision, db upgrade)
-# Phase 2+ : app/auth/, ...
+app/auth/      # sessions, mots de passe, TOTP, OAuth login, RBAC, rate limiting, purges
+app/directory/ # identités globales, memberships, invitations, annuaire, équipes (DB tenant)
+app/cli.py     # CLI `saas` (tenant create/list/retry-provision, invitation create, db upgrade)
+# Phase 3+ : app/admin/, ...
 ```
 
 Chaque module expose au besoin : `router.py` (routes FastAPI), `service.py` (logique),
@@ -33,6 +34,22 @@ Chaque module expose au besoin : `router.py` (routes FastAPI), `service.py` (log
   les URL sont composées dans `Settings` uniquement.
 - **Identifiants SQL** : seuls CREATE/DROP DATABASE (provisioning) interpolent un
   identifiant, toujours dérivé d'un slug validé (`validate_slug`) puis quoté.
+
+## Auth — règles non négociables (Phase 2)
+
+- **Aucune route métier sans `require_permission("core.x.y")`** (`app.auth.permissions`),
+  qui compose `resolve_tenant` (sous-domaine x session x membership). Les seules routes
+  anonymes sont une liste fermée : health, login (+TOTP), OAuth start/callback,
+  acceptation d'invitation.
+- **Aucun secret en clair en base** : mots de passe argon2id ; tokens de session,
+  d'invitation et de challenge **hachés** (sha256, `app.auth.tokens`) ; secrets TOTP
+  **chiffrés** via `app.core.crypto.get_key_provider()`. Un token en clair n'apparaît
+  qu'une fois, dans la réponse à son créateur.
+- **Inscription publique désactivée** : tout compte naît d'une invitation ; l'OAuth
+  login ne crée jamais de compte (liaison par email vérifié, puis (provider, subject)).
+- Jamais d'email ni de credential dans les logs — référencer `user_id`/`tenant`.
+- Rôles en code (`owner`/`admin`/`member`, décision D6) ; règles owner (promotion,
+  dernier owner intouchable) dans `app.directory.service`, pas dans le RBAC.
 
 ## Règles
 

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.core.config import Settings, get_settings
+from app.core.crypto import reset_key_provider
 from app.core.db import dispose_control_engine
 from app.main import create_app
 from app.tenancy.engine_manager import dispose_engine_manager
@@ -27,6 +28,9 @@ def _postgres_available() -> bool:
 
 POSTGRES_AVAILABLE = _postgres_available()
 
+# Révision head du schéma tenant — à faire évoluer avec chaque nouvelle révision.
+TENANT_HEAD_REVISION = "0002_tenant_teams"
+
 # Les tests DB exigent un vrai Postgres (décision D6) : celui du Compose en local
 # (`make infra`), le service postgres:17 en CI.
 requires_postgres = pytest.mark.skipif(
@@ -38,8 +42,22 @@ requires_postgres = pytest.mark.skipif(
 def clear_settings_cache() -> Iterator[None]:
     """Chaque test repart d'une config propre (get_settings est mis en cache)."""
     get_settings.cache_clear()
+    reset_key_provider()
     yield
     get_settings.cache_clear()
+    reset_key_provider()
+
+
+@pytest.fixture(autouse=True)
+def fake_rate_limiter() -> Iterator[None]:
+    """Valkey simulé pour le rate limiting : ni la CI ni les tests n'exigent Redis."""
+    import fakeredis.aioredis
+
+    from app.auth.rate_limit import set_rate_limit_client
+
+    set_rate_limit_client(fakeredis.aioredis.FakeRedis())
+    yield
+    set_rate_limit_client(None)
 
 
 @pytest.fixture

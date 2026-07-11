@@ -1,15 +1,14 @@
-"""Identités globales minimales (control-plane).
+"""Identités globales (control-plane).
 
 Un email peut appartenir à plusieurs tenants (plan global §3) : `users` porte
-l'identité globale, `memberships` le lien user x tenant x rôle. AUCUN credential
-ici — l'authentification arrive en Phase 2 ; ces tables naissent maintenant pour
-que le schéma control-plane soit complet dès la première migration.
+l'identité globale, `memberships` le lien user x tenant x rôle. Les credentials
+(mot de passe, TOTP, identités OAuth) vivent dans `app.auth.models`.
 """
 
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, UniqueConstraint, func, text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, UniqueConstraint, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import ControlPlaneBase
@@ -21,6 +20,11 @@ class User(ControlPlaneBase):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     email: Mapped[str] = mapped_column(String(320))
+    display_name: Mapped[str | None] = mapped_column(String(255), default=None)
+    # Rôle plateforme (§4) : réservé au back-office (Phase 3), aucune route publique.
+    is_platform_admin: Mapped[bool] = mapped_column(
+        Boolean(), default=False, server_default="false"
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -34,6 +38,7 @@ class Membership(ControlPlaneBase):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"))
-    # Rôle tenant (owner/admin/member + rôles custom en Phase 2) — texte libre validé en Phase 2.
+    # Rôle tenant : owner/admin/member (décision D6 Phase 2, `app.auth.permissions`).
+    # Colonne texte : les rôles custom (Phase 7+) s'ajouteront sans migration destructive.
     role: Mapped[str] = mapped_column(String(50))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -13,6 +13,7 @@ import typer
 from app.core.config import get_settings
 from app.core.db import dispose_control_engine
 from app.core.logging import configure_logging
+from app.directory.service import DirectoryError
 from app.tenancy.engine_manager import dispose_engine_manager
 from app.tenancy.migrations_runner import (
     MigrationReport,
@@ -44,22 +45,71 @@ def run_async[T](coro: Coroutine[None, None, T]) -> T:
 app = typer.Typer(no_args_is_help=True, help="Administration du socle SaaS multi-tenant.")
 tenant_app = typer.Typer(no_args_is_help=True, help="Gestion des tenants.")
 db_app = typer.Typer(no_args_is_help=True, help="Migrations de schéma (control-plane + tenants).")
+invitation_app = typer.Typer(no_args_is_help=True, help="Invitations d'utilisateurs.")
 app.add_typer(tenant_app, name="tenant")
 app.add_typer(db_app, name="db")
+app.add_typer(invitation_app, name="invitation")
+
+
+async def _invite(slug: str, email: str, role: str) -> str:
+    """Crée une invitation (contexte admin CLI) et retourne l'URL d'acceptation."""
+    from sqlalchemy import select
+
+    from app.core.db import get_control_sessionmaker
+    from app.directory.service import accept_url_for, create_invitation
+
+    async with get_control_sessionmaker()() as session:
+        tenant = await session.scalar(select(Tenant).where(Tenant.slug == slug))
+        if tenant is None:
+            msg = f"Tenant {slug!r} inconnu au catalogue."
+            raise DirectoryError(msg)
+        _, token = await create_invitation(session, tenant.id, email, role)
+        await session.commit()
+    return accept_url_for(token)
 
 
 @tenant_app.command("create")
 def tenant_create(
     slug: Annotated[str, typer.Argument(help="Sous-domaine du tenant (^[a-z][a-z0-9-]{1,38}$).")],
     name: Annotated[str | None, typer.Option(help="Nom affiché (défaut : le slug).")] = None,
+    owner_email: Annotated[
+        str | None,
+        typer.Option("--owner-email", help="Invite ce premier owner à la fin du provisioning."),
+    ] = None,
 ) -> None:
-    """Provisionne un tenant : catalogue, CREATE DATABASE, migrations, seed."""
+    """Provisionne un tenant : catalogue, CREATE DATABASE, migrations, seed.
+
+    Avec --owner-email : invitation owner créée à la fin, URL affichée en sortie
+    (décision D8 Phase 2 — l'URL est toujours retournée à l'appelant).
+    """
     try:
         tenant = run_async(provision_tenant(slug, name or slug))
     except (ValueError, ProvisioningError) as exc:
         typer.echo(f"ERREUR : {exc}", err=True)
         raise typer.Exit(code=1) from exc
     typer.echo(f"Tenant {tenant.slug!r} actif (base {tenant.db_name}).")
+    if owner_email is not None:
+        try:
+            accept_url = run_async(_invite(slug, owner_email, "owner"))
+        except (ValueError, DirectoryError) as exc:
+            typer.echo(f"ERREUR invitation : {exc}", err=True)
+            raise typer.Exit(code=1) from exc
+        typer.echo(f"Invitation owner créée — URL d'acceptation : {accept_url}")
+
+
+@invitation_app.command("create")
+def invitation_create(
+    slug: Annotated[str, typer.Argument(help="Slug du tenant.")],
+    email: Annotated[str, typer.Argument(help="Email de la personne invitée.")],
+    role: Annotated[str, typer.Option(help="Rôle : owner, admin ou member.")] = "member",
+) -> None:
+    """Invite un utilisateur sur un tenant ; affiche l'URL d'acceptation."""
+    try:
+        accept_url = run_async(_invite(slug, email, role))
+    except (ValueError, DirectoryError) as exc:
+        typer.echo(f"ERREUR : {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(f"Invitation créée — URL d'acceptation : {accept_url}")
 
 
 @tenant_app.command("retry-provision")

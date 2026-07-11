@@ -21,6 +21,9 @@ class TenantContext:
     state: TenantState
     db_name: str
     db_host: str
+    # Rôle du membership de l'utilisateur courant (Phase 2) — None hors HTTP
+    # (CLI, tâches Celery : pas d'utilisateur).
+    role: str | None = None
 
 
 _current_tenant: ContextVar[TenantContext | None] = ContextVar("current_tenant", default=None)

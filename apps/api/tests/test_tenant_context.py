@@ -6,6 +6,7 @@ from typing import Annotated
 import pytest
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from app.core.config import Settings
 from app.core.db import get_control_sessionmaker
@@ -20,6 +21,7 @@ from app.tenancy.deps import extract_slug, resolve_tenant
 from app.tenancy.models import Tenant, TenantState
 from app.tenancy.session import get_tenant_session
 from tests.conftest import requires_postgres
+from tests.helpers import add_membership, create_session_token, create_user
 
 
 def _ctx(slug: str = "acme") -> TenantContext:
@@ -73,16 +75,17 @@ def _resolver_app() -> FastAPI:
     @app.get("/whoami")
     async def whoami(  # pyright: ignore[reportUnusedFunction]
         ctx: Annotated[TenantContext, Depends(resolve_tenant)],
-    ) -> dict[str, str]:
+    ) -> dict[str, str | None]:
         # La dépendance doit avoir posé le contexte pour toute la requête.
         assert current_tenant() is ctx
-        return {"slug": ctx.slug}
+        return {"slug": ctx.slug, "role": ctx.role}
 
     return app
 
 
 @requires_postgres
 async def test_resolve_tenant_from_subdomain(db_env: Settings) -> None:
+    """Phase 2 : le contexte tenant exige sous-domaine x session x membership."""
     async with get_control_sessionmaker()() as session:
         session.add_all(
             [
@@ -108,16 +111,34 @@ async def test_resolve_tenant_from_subdomain(db_env: Settings) -> None:
         )
         await session.commit()
 
+    async with get_control_sessionmaker()() as session:
+        acme = await session.scalar(select(Tenant).where(Tenant.slug == "acme"))
+    assert acme is not None
+    member = await create_user("member@example.com")
+    member_token = await create_session_token(member.id)
+    await add_membership(member.id, acme.id, "member")
+    outsider = await create_user("outsider@example.com")
+    outsider_token = await create_session_token(outsider.id)
+
     # TestClient exécute l'app dans sa propre event loop : on libère l'engine
     # singleton créé dans la boucle du test pour que l'app recrée le sien.
     from app.core.db import dispose_control_engine
 
     await dispose_control_engine()
 
+    cookie = db_env.session_cookie_name
     with TestClient(_resolver_app()) as client:
+        anonymous = client.get("/whoami", headers={"host": "acme.app.example.fr"})
+        assert anonymous.status_code == 401
+
+        client.cookies.set(cookie, outsider_token)
+        not_member = client.get("/whoami", headers={"host": "acme.app.example.fr"})
+        assert not_member.status_code == 403
+
+        client.cookies.set(cookie, member_token)
         ok = client.get("/whoami", headers={"host": "acme.app.example.fr"})
         assert ok.status_code == 200
-        assert ok.json() == {"slug": "acme"}
+        assert ok.json() == {"slug": "acme", "role": "member"}
 
         unknown = client.get("/whoami", headers={"host": "nexiste-pas.app.example.fr"})
         assert unknown.status_code == 404

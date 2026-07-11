@@ -11,7 +11,7 @@ from app.tenancy.migrations_runner import (
     upgrade_all,
 )
 from app.tenancy.provisioning import provision_tenant
-from tests.conftest import requires_postgres
+from tests.conftest import TENANT_HEAD_REVISION, requires_postgres
 
 pytestmark = requires_postgres
 
@@ -50,7 +50,7 @@ async def test_partial_failure_does_not_block_other_databases(db_env: Settings) 
     assert by_target["controlplane"].ok is True
     assert by_target["acme"].ok is True
     acme_url = db_env.tenant_database_url(f"{db_env.tenant_db_prefix}acme")
-    assert await read_schema_revision(acme_url) == "0001_tenant"
+    assert await read_schema_revision(acme_url) == TENANT_HEAD_REVISION
 
 
 async def test_advisory_lock_already_held_fails_fast(db_env: Settings) -> None:

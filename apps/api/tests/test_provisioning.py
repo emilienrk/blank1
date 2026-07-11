@@ -14,7 +14,7 @@ from app.tenancy.provisioning import (
 )
 from app.tenancy.session import get_tenant_session
 from app.tenancy.tenant_base import TenantSetting
-from tests.conftest import requires_postgres
+from tests.conftest import TENANT_HEAD_REVISION, requires_postgres
 
 pytestmark = requires_postgres
 
@@ -37,7 +37,7 @@ async def test_provision_tenant_end_to_end(db_env: Settings) -> None:
 
     # Base migrée à head.
     url = db_env.tenant_database_url(tenant.db_name, tenant.db_host)
-    assert await read_schema_revision(url) == "0001_tenant"
+    assert await read_schema_revision(url) == TENANT_HEAD_REVISION
 
     # Seed présent, lu via LE chemin officiel : contexte tenant + get_tenant_session.
     ctx = TenantContext(
@@ -85,7 +85,7 @@ async def test_failure_then_retry_provision(db_env: Settings) -> None:
     repaired = await retry_provision("acme")
     assert repaired.state is TenantState.ACTIVE
     url = db_env.tenant_database_url(repaired.db_name, repaired.db_host)
-    assert await read_schema_revision(url) == "0001_tenant"
+    assert await read_schema_revision(url) == TENANT_HEAD_REVISION
 
 
 async def test_retry_provision_refuses_active_tenant(db_env: Settings) -> None:
