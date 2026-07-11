@@ -1,0 +1,135 @@
+# TestClient (starlette/httpx) expose des membres partiellement typés.
+# pyright: reportUnknownMemberType=false, reportUnknownVariableType=false
+import uuid
+from typing import Annotated
+
+import pytest
+from fastapi import Depends, FastAPI
+from fastapi.testclient import TestClient
+
+from app.core.config import Settings
+from app.core.db import get_control_sessionmaker
+from app.tenancy.context import (
+    TenantContext,
+    TenantContextError,
+    current_tenant,
+    current_tenant_or_none,
+    tenant_context,
+)
+from app.tenancy.deps import extract_slug, resolve_tenant
+from app.tenancy.models import Tenant, TenantState
+from app.tenancy.session import get_tenant_session
+from tests.conftest import requires_postgres
+
+
+def _ctx(slug: str = "acme") -> TenantContext:
+    return TenantContext(
+        tenant_id=uuid.uuid4(),
+        slug=slug,
+        state=TenantState.ACTIVE,
+        db_name=f"tenant_{slug}",
+        db_host="default",
+    )
+
+
+def test_current_tenant_without_context_raises() -> None:
+    with pytest.raises(TenantContextError):
+        current_tenant()
+
+
+def test_tenant_context_manager_sets_and_resets() -> None:
+    ctx = _ctx()
+    assert current_tenant_or_none() is None
+    with tenant_context(ctx):
+        assert current_tenant() is ctx
+    assert current_tenant_or_none() is None
+
+
+async def test_get_tenant_session_without_context_refuses() -> None:
+    sessions = get_tenant_session()
+    with pytest.raises(TenantContextError):
+        await anext(sessions)
+
+
+@pytest.mark.parametrize(
+    ("host", "expected"),
+    [
+        ("acme.app.example.fr", "acme"),
+        ("acme.app.example.fr:443", "acme"),
+        ("ACME.app.example.fr", "acme"),
+        ("localhost", None),  # pas de sous-domaine
+        ("app.example.fr", "app"),  # candidat syntaxiquement valide → 404 au catalogue
+        ("_bad.app.example.fr", None),  # label invalide
+        ("", None),
+    ],
+)
+def test_extract_slug(host: str, expected: str | None) -> None:
+    assert extract_slug(host) == expected
+
+
+def _resolver_app() -> FastAPI:
+    app = FastAPI()
+
+    @app.get("/whoami")
+    async def whoami(  # pyright: ignore[reportUnusedFunction]
+        ctx: Annotated[TenantContext, Depends(resolve_tenant)],
+    ) -> dict[str, str]:
+        # La dépendance doit avoir posé le contexte pour toute la requête.
+        assert current_tenant() is ctx
+        return {"slug": ctx.slug}
+
+    return app
+
+
+@requires_postgres
+async def test_resolve_tenant_from_subdomain(db_env: Settings) -> None:
+    async with get_control_sessionmaker()() as session:
+        session.add_all(
+            [
+                Tenant(
+                    slug="acme",
+                    name="ACME",
+                    db_name="acme_db_nonexistent",
+                    state=TenantState.ACTIVE,
+                ),
+                Tenant(
+                    slug="frozen",
+                    name="Frozen",
+                    db_name="frozen_db_nonexistent",
+                    state=TenantState.SUSPENDED,
+                ),
+                Tenant(
+                    slug="broken",
+                    name="Broken",
+                    db_name="broken_db_nonexistent",
+                    state=TenantState.FAILED,
+                ),
+            ]
+        )
+        await session.commit()
+
+    # TestClient exécute l'app dans sa propre event loop : on libère l'engine
+    # singleton créé dans la boucle du test pour que l'app recrée le sien.
+    from app.core.db import dispose_control_engine
+
+    await dispose_control_engine()
+
+    with TestClient(_resolver_app()) as client:
+        ok = client.get("/whoami", headers={"host": "acme.app.example.fr"})
+        assert ok.status_code == 200
+        assert ok.json() == {"slug": "acme"}
+
+        unknown = client.get("/whoami", headers={"host": "nexiste-pas.app.example.fr"})
+        assert unknown.status_code == 404
+
+        suspended = client.get("/whoami", headers={"host": "frozen.app.example.fr"})
+        assert suspended.status_code == 403
+
+        failed = client.get("/whoami", headers={"host": "broken.app.example.fr"})
+        assert failed.status_code == 404
+
+        no_subdomain = client.get("/whoami", headers={"host": "localhost"})
+        assert no_subdomain.status_code == 404
+
+    # Le contexte ne fuit jamais hors requête.
+    assert current_tenant_or_none() is None

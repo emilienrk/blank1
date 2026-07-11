@@ -33,23 +33,31 @@ services:
       context: .
       dockerfile: apps/api/Dockerfile
     image: ${API_IMAGE:-saas-api:local}
-    environment:
+    environment: &app_env
       APP_ENV: ${APP_ENV:-dev}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       VALKEY_URL: redis://valkey:6379/0
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      POSTGRES_DB: ${POSTGRES_DB:-controlplane}
     depends_on:
-      - valkey
+      valkey:
+        condition: service_started
+      postgres:
+        condition: service_healthy
 
   # Même image que l'api : seule la commande diffère (invariant du plan global).
   worker:
     image: ${API_IMAGE:-saas-api:local}
     command: ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=INFO"]
-    environment:
-      APP_ENV: ${APP_ENV:-dev}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      VALKEY_URL: redis://valkey:6379/0
+    environment: *app_env
     depends_on:
-      - valkey
+      valkey:
+        condition: service_started
+      postgres:
+        condition: service_healthy
 
   # Sert la SPA buildée et route /api/* vers l'api (TLS auto en staging).
   caddy:

@@ -77,6 +77,16 @@ fi
 echo "Redéploiement…"
 compose up -d --remove-orphans
 
+# Migrations : control-plane + toutes les bases tenant (décision D8 Phase 1).
+# Une base en échec n'empêche pas les autres d'être migrées, mais fait échouer
+# le déploiement (visible dans journalctl) ; le verrou advisory protège d'un
+# chevauchement avec un lancement manuel.
+echo "Migrations de schéma…"
+if ! compose run --rm api saas db upgrade; then
+    echo "ÉCHEC : migrations en erreur — voir le rapport ci-dessus." >&2
+    exit 1
+fi
+
 SITE=$(image_var SITE_ADDRESS)
 echo "Smoke test sur https://${SITE}"
 # Laisse quelques secondes aux services pour démarrer avant la sonde

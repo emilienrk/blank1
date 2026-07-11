@@ -9,6 +9,10 @@ dependencies = [
     "pydantic-settings>=2.4",
     "structlog>=24.4",
     "celery[redis]>=5.4",
+    "sqlalchemy[asyncio]>=2.0.36",
+    "asyncpg>=0.30",
+    "alembic>=1.14",
+    "typer>=0.15",
 ]
 
 [dependency-groups]
@@ -19,6 +23,9 @@ dev = [
     "ruff>=0.8",
     "pyright[nodejs]>=1.1.390",
 ]
+
+[project.scripts]
+saas = "app.cli:main"
 
 [build-system]
 requires = ["hatchling"]
