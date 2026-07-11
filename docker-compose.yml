@@ -1,0 +1,123 @@
+# Environnement complet : `docker compose up -d`.
+# Dev partiel : `make infra` (Postgres, Valkey, Loki, Grafana, Alloy, Uptime Kuma)
+# puis `make api` et `make web` en local pour le rechargement à chaud.
+# Staging : combiné avec docker-compose.staging.yml.
+
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      # Ce rôle peut CREATE DATABASE : requis par le provisioning de tenants (Phase 1).
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      POSTGRES_DB: ${POSTGRES_DB:-controlplane}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-app} -d ${POSTGRES_DB:-controlplane}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  valkey:
+    image: valkey/valkey:8
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - valkey_data:/data
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    image: ${API_IMAGE:-saas-api:local}
+    environment:
+      APP_ENV: ${APP_ENV:-dev}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      VALKEY_URL: redis://valkey:6379/0
+    depends_on:
+      - valkey
+
+  # Même image que l'api : seule la commande diffère (invariant du plan global).
+  worker:
+    image: ${API_IMAGE:-saas-api:local}
+    command: ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=INFO"]
+    environment:
+      APP_ENV: ${APP_ENV:-dev}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      VALKEY_URL: redis://valkey:6379/0
+    depends_on:
+      - valkey
+
+  # Sert la SPA buildée et route /api/* vers l'api (TLS auto en staging).
+  caddy:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    image: ${WEB_IMAGE:-saas-web:local}
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-http://localhost:8080}
+    ports:
+      - "8080:8080"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+
+  # --- Observabilité allégée (plan global §7) ---
+
+  loki:
+    image: grafana/loki:3.4.1
+    command: -config.file=/etc/loki/loki.yaml
+    volumes:
+      - ./infra/loki/loki-config.yaml:/etc/loki/loki.yaml:ro
+      - loki_data:/loki
+
+  alloy:
+    image: grafana/alloy:v1.7.5
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --storage.path=/var/lib/alloy/data
+    volumes:
+      - ./infra/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - alloy_data:/var/lib/alloy/data
+    depends_on:
+      - loki
+
+  # Surface admin : port lié à 127.0.0.1 uniquement (invariant I6 — accès via WireGuard/SSH tunnel).
+  grafana:
+    image: grafana/grafana:11.5.2
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - loki
+
+  # Surface admin : port lié à 127.0.0.1 uniquement (invariant I6).
+  uptime-kuma:
+    image: louislam/uptime-kuma:1
+    ports:
+      - "127.0.0.1:3001:3001"
+    volumes:
+      - uptime_kuma_data:/app/data
+
+volumes:
+  postgres_data:
+  valkey_data:
+  caddy_data:
+  caddy_config:
+  loki_data:
+  alloy_data:
+  grafana_data:
+  uptime_kuma_data:

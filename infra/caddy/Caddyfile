@@ -1,0 +1,16 @@
+# Dev : http://localhost:8080 — Staging : SITE_ADDRESS=staging.<domaine> (TLS automatique).
+# Le DNS staging doit prévoir le wildcard *.staging.<domaine> (résolution tenant par
+# sous-domaine à partir de la Phase 1).
+{$SITE_ADDRESS:http://localhost:8080} {
+	encode zstd gzip
+
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+
+	handle {
+		root * /srv/www
+		try_files {path} /index.html
+		file_server
+	}
+}
