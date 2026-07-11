@@ -1,6 +1,6 @@
 # Socle SaaS B2B multi-tenant — conventions du monorepo
 
-Plans de référence : `docs/architecture-plan.md` (global) et `docs/phase-1-socle-multi-tenant-plan.md` (phase courante).
+Plans de référence : `docs/architecture-plan.md` (global) et `docs/phase-2-auth-annuaire-plan.md` (phase courante — plan en attente de validation utilisateur).
 
 ## Carte du repo
 
