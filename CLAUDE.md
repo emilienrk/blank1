@@ -1,6 +1,6 @@
 # Socle SaaS B2B multi-tenant — conventions du monorepo
 
-Plans de référence : `docs/architecture-plan.md` (global) et `docs/phase-0-fondations-plan.md` (phase courante).
+Plans de référence : `docs/architecture-plan.md` (global) et `docs/phase-1-socle-multi-tenant-plan.md` (phase courante).
 
 ## Carte du repo
 
@@ -21,9 +21,9 @@ Tout passe par le `Makefile` : `make install`, `make dev`, `make lint`, `make ty
 
 ## Invariants — à respecter absolument
 
-1. **Jamais de requête métier sans contexte tenant résolu.** (La tenancy arrive en Phase 1,
-   mais tout code écrit ici doit naître tenant-aware : ne jamais supposer « une seule base »
-   ou « un seul client ».)
+1. **Jamais de requête métier sans contexte tenant résolu.** Exécutable depuis la Phase 1 :
+   tout accès à une DB tenant passe par `app.tenancy.session.get_tenant_session()`, qui lève
+   `TenantContextError` sans contexte posé. Ne jamais créer d'engine tenant à la main.
 2. **Une seule image Docker pour `api` et `worker`** — seule la commande de démarrage diffère.
 3. **Config exclusivement par variables d'environnement** (pydantic-settings). Aucun secret
    dans le repo ; `.env.example` committé, `.env` ignoré.

@@ -31,19 +31,38 @@ Caddy, Loki/Grafana/Alloy, Uptime Kuma), déploiement staging en modèle pull
 (`scripts/deploy-pull.sh` + timer systemd). Détail complet : `docs/phase-0-fondations-plan.md`
 et le README.
 
-### Phase 1 : plan détaillé rédigé, EN ATTENTE DE VALIDATION ⏳
+### Phase 1 : IMPLÉMENTÉE ✅ (plan validé par l'utilisateur, décisions D1-D8 suivies)
 
-- **Branche** : `claude/project-handoff-review-xb5o01` (PR draft associée).
-- Livrable de cette session : `docs/phase-1-socle-multi-tenant-plan.md` — control-plane
-  (catalogue `tenants`, `users` identités globales, `memberships`), `TenantEngineManager`
-  (async engines paresseux, LRU), deux arbres Alembic (control-plane / tenant), runner de
-  migrations multi-bases (verrou advisory, rapport d'échecs partiels, séquentiel), 
-  provisioning + CLI Typer `saas`, Postgres réel dans la CI.
-- **Méthode convenue avec l'utilisateur : ne PAS implémenter tant que ce plan n'est pas
-  validé.** À la validation (éventuellement amendée), implémenter tâche par tâche (T1→T10).
-- Décisions proposées à valider en particulier : D4 (PgBouncer différé), D5 (résolution
-  HTTP du tenant limitée à une dépendance testée, pas de route publique), D8 (migrations
-  lancées par `deploy-pull.sh`).
+- **Branche** : `claude/next-phase-detailed-plan-twlm2j` (PR associée).
+- Livré, conformément au plan `docs/phase-1-socle-multi-tenant-plan.md` :
+  - Control-plane : `tenants` (catalogue, D3 : jamais d'URL/credentials en base),
+    `users` + `memberships` (identités globales minimales, zéro credential) ;
+    engine/session singleton dans `app/core/db.py`.
+  - `TenantEngineManager` (`app/tenancy/engine_manager.py`) : engines async paresseux,
+    LRU + dispose, `invalidate()`, plafond = cache_size x pool_size.
+  - Contexte tenant (`context.py`, contextvars) + `get_tenant_session()` (`session.py`,
+    SEUL chemin vers les DB tenant, lève `TenantContextError` sans contexte) +
+    dépendance `resolve_tenant` (`deps.py`, sous-domaine → 404/403, D5 : aucune route
+    publique ne l'expose encore).
+  - Deux arbres Alembic (`apps/api/migrations/{controlplane,tenant}`, env.py async,
+    D2) + runner multi-bases (`migrations_runner.py` : verrou advisory 715001,
+    séquentiel D7, rapport par base, échec partiel ne bloque pas les autres).
+  - Provisioning (`provisioning.py` : validate slug → catalogue → CREATE DATABASE →
+    migrations → seed → active ; `retry_provision` droppe l'orpheline) + CLI Typer
+    `saas` (`app/cli.py`, console script) : tenant create/list/retry-provision,
+    db upgrade (exit 1 si échec partiel, 2 si verrou occupé).
+  - CI : service postgres:17 sur le job backend ; `deploy-pull.sh` lance
+    `saas db upgrade` après redéploiement (D8), échec → déploiement en erreur.
+  - 35 tests pytest (Postgres réel, D6 — bases éphémères `test_*` droppées) :
+    engine manager (LRU/dispose/invalidate), contexte + resolver (404/403),
+    provisioning (bout en bout, slug invalide/dupliqué/réservé, échec→retry),
+    runner (échec partiel, verrou advisory), CLI, composition d'URL.
+- **Pièges appris (à ne pas re-payer)** : les pools asyncpg sont liés à leur event
+  loop — le CLI enveloppe chaque commande dans `run_async()` qui dispose les engines
+  dans la même boucle ; TestClient a sa propre boucle → `dispose_control_engine()`
+  avant de l'instancier dans un test qui a déjà touché la DB ; typeshed récent exige
+  `Generator`/`AsyncGenerator` (pas `Iterator`) comme retour des fonctions décorées
+  `@contextmanager`/`@asynccontextmanager`.
 
 ### Décisions d'implémentation héritées de la Phase 0 (toujours en vigueur)
 
@@ -73,14 +92,15 @@ et le README.
 
 ## Prochaine étape (pour la session suivante)
 
-1. Recueillir la validation de l'utilisateur sur `docs/phase-1-socle-multi-tenant-plan.md`
-   (amender si retours, notamment D4/D5/D8).
-2. Implémenter la Phase 1 **tâche par tâche dans l'ordre T1→T10** du plan, en gardant la
-   CI verte à chaque étape ; les tests DB exigent un Postgres réel (service CI + Compose
-   en local, décision D6).
-3. Dérouler le critère de démo (section E du plan) et mettre à jour ce handoff.
-4. Ensuite : Phase 2 — Auth + annuaire (même méthode : plan détaillé d'abord, validation,
-   puis implémentation).
+1. Faire fusionner la PR Phase 1 ; dérouler le critère de démo staging (section E du
+   plan Phase 1) dès que la machine existe.
+2. Ensuite : **Phase 2 — Auth + annuaire** (sessions, argon2, TOTP, OAuth login
+   Google/Microsoft via Authlib, orgs/équipes/rôles/permissions, invitations).
+   Même méthode : plan détaillé d'abord (`docs/phase-2-...-plan.md`), validation
+   utilisateur, puis implémentation. La Phase 2 branche session + membership dans
+   `resolve_tenant` (TODO tracé dans `app/tenancy/deps.py`), consomme
+   `users`/`memberships` et ajoute l'invitation du premier owner au provisioning
+   (TODO tracé dans `app/tenancy/provisioning.py`).
 
 ## Commandes utiles
 

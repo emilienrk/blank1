@@ -52,6 +52,26 @@ scripts/             # export OpenAPI, smoke test
 
 Les invariants du projet (multi-tenant, sécurité, logs) sont dans [CLAUDE.md](CLAUDE.md).
 
+## Multi-tenant (Phase 1)
+
+Une base PostgreSQL par tenant, un control-plane pour le catalogue et les identités.
+Administration via le CLI `saas` (en conteneur : `docker compose run --rm api saas …`) :
+
+```bash
+uv run saas tenant create acme --name "ACME Corp"   # catalogue + CREATE DATABASE + migrations + seed
+uv run saas tenant list                             # états + version de schéma par base
+uv run saas tenant retry-provision acme             # rejoue un provisioning en échec
+uv run saas db upgrade                              # migre control-plane + toutes les bases tenant
+```
+
+`saas db upgrade` rapporte base par base et sort en erreur au moindre échec (une base
+en échec ne bloque pas les autres). Les migrations tournent automatiquement à chaque
+déploiement staging (`scripts/deploy-pull.sh`). Nouvelles révisions :
+`make revision-controlplane m="..."` / `make revision-tenant m="..."`.
+
+**Prérequis pour `make test` en local** : un Postgres joignable (celui de `make infra`
+suffit) — les tests DB créent des bases éphémères `test_*` et les droppent en teardown.
+
 ## Déploiement staging (modèle pull)
 
 Chaque push sur `main` : la CI passe, puis `staging-images.yml` publie les images
