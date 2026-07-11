@@ -72,6 +72,36 @@ déploiement staging (`scripts/deploy-pull.sh`). Nouvelles révisions :
 **Prérequis pour `make test` en local** : un Postgres joignable (celui de `make infra`
 suffit) — les tests DB créent des bases éphémères `test_*` et les droppent en teardown.
 
+## Auth + annuaire (Phase 2)
+
+Auth interne construite sur des briques mûres : argon2id (mots de passe), sessions
+serveur en DB control-plane (cookie httpOnly/SameSite=Lax, révocables), TOTP pyotp
+(secrets chiffrés AES-256-GCM), OAuth login Google/Microsoft (OIDC, Authlib).
+**Inscription publique désactivée** : tout compte naît d'une invitation.
+
+Flux type (au curl ou via `/api/v1/docs` — la SPA arrive en Phase 3) :
+
+```bash
+uv run saas tenant create acme --owner-email alice@example.com  # → URL d'invitation affichée
+uv run saas invitation create acme bob@example.com --role member
+# POST /api/v1/auth/invitations/accept {token, password}   → compte créé + membership
+# POST /api/v1/auth/login {email, password}                → cookie de session
+#   (réponse totp_required + challenge si TOTP activé → POST /api/v1/auth/login/totp)
+# GET  /api/v1/directory/members (Host: acme.<domaine>)    → annuaire du tenant
+```
+
+L'URL d'acceptation est **toujours retournée à l'appelant** (CLI ou API) ; l'envoi
+d'email est optionnel et s'active en configurant `SMTP_*` (relais recommandé : §8.4
+du plan global). RBAC : rôles `owner`/`admin`/`member`, permissions `core.*` vérifiées
+par la dépendance unique `require_permission` ; toute route métier exige sous-domaine
+tenant + session + membership.
+
+Variables d'environnement clés (voir `.env.example`) : `AUTH_MASTER_KEY` (obligatoire
+hors dev — `openssl rand -base64 32`), `SESSION_COOKIE_DOMAIN` (`.staging.<domaine>`
+en staging : un login vaut pour tous les tenants de l'utilisateur), `PUBLIC_BASE_URL`,
+`GOOGLE_CLIENT_ID/SECRET` et `MICROSOFT_CLIENT_ID/SECRET` (apps OAuth avec redirect URI
+`<PUBLIC_BASE_URL>/api/v1/auth/oauth/{provider}/callback`, scopes `openid email profile`).
+
 ## Déploiement staging (modèle pull)
 
 Chaque push sur `main` : la CI passe, puis `staging-images.yml` publie les images

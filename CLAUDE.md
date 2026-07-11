@@ -1,6 +1,6 @@
 # Socle SaaS B2B multi-tenant — conventions du monorepo
 
-Plans de référence : `docs/architecture-plan.md` (global) et `docs/phase-2-auth-annuaire-plan.md` (phase courante — plan en attente de validation utilisateur).
+Plans de référence : `docs/architecture-plan.md` (global) et `docs/phase-2-auth-annuaire-plan.md` (phase courante — plan validé, implémenté).
 
 ## Carte du repo
 
@@ -35,6 +35,10 @@ Tout passe par le `Makefile` : `make install`, `make dev`, `make lint`, `make ty
 7. **Surfaces admin jamais exposées publiquement** (Grafana, Uptime Kuma, futur back-office) :
    réseau local/WireGuard uniquement, même en staging.
 8. **Typage strict dès la première ligne** : pyright `strict`, TypeScript `strict: true`.
+9. **Aucune route métier sans `require_permission`** (Phase 2) : auth + membership exigés
+   partout ; les seules routes anonymes sont health, login (+TOTP), OAuth start/callback
+   et acceptation d'invitation. Aucun secret en clair en base (argon2id, tokens hachés,
+   secrets TOTP chiffrés) ; inscription publique désactivée — tout compte naît d'une invitation.
 
 ## Conventions
 

@@ -1,7 +1,8 @@
 # Passation de session — état du projet et reprise
 
 > Document destiné à une nouvelle session (Claude/Fable) pour continuer le travail
-> sans re-dériver le contexte. Dernière mise à jour : 2026-07-11 (session « plan Phase 2 »).
+> sans re-dériver le contexte. Dernière mise à jour : 2026-07-11 (session
+> « implémentation Phase 2 »).
 
 ## Le projet en bref
 
@@ -14,9 +15,8 @@ Documents de référence, à lire dans cet ordre :
 1. `docs/architecture-plan.md` — plan global (stack, architecture, 9 phases). **Toutes
    les décisions d'architecture y sont actées : ne pas les rouvrir sans demande explicite.**
 2. `docs/phase-2-auth-annuaire-plan.md` — plan détaillé de la phase courante
-   (tâches T1-T10, décisions D1-D9, invariants, tests, critère de démo). **C'est le
-   document de travail actuel — EN ATTENTE DE VALIDATION UTILISATEUR, ne pas
-   implémenter avant.**
+   (tâches T1-T10, décisions D1-D9, invariants, tests, critère de démo).
+   **Plan validé par l'utilisateur et implémenté (PR en cours de revue).**
 3. `docs/phase-1-socle-multi-tenant-plan.md` et `docs/phase-0-fondations-plan.md` —
    plans des phases précédentes (implémentées, fusionnées).
 4. `CLAUDE.md` (racine) et `apps/api/CLAUDE.md` — conventions et invariants opérationnels.
@@ -92,25 +92,50 @@ et le README.
 3. **Machine de staging** : Docker + `/srv/saas/.env` + PAT `packages:read` + timer
    systemd (procédure complète dans le README, section « Déploiement staging »).
 
-### Phase 2 : PLAN RÉDIGÉ, EN ATTENTE DE VALIDATION ⏳
+### Phase 2 : IMPLÉMENTÉE ✅ (plan validé par l'utilisateur, décisions D1-D9 suivies)
 
-- **Branche** : `claude/phase-2-handoff-review-yc44nn` (cette session).
-- `docs/phase-2-auth-annuaire-plan.md` : sessions serveur (DB control-plane, cookie
-  parent-domain), argon2id, TOTP (secrets chiffrés via un `KeyProvider` AES-256-GCM
-  minimal introduit en T2), OAuth login Google/Microsoft (Authlib, invitation only),
-  RBAC (`require_permission`, rôles owner/admin/member en code), invitations (URL
-  toujours retournée à l'appelant, SMTP optionnel), équipes en DB tenant (première
-  vraie route via `get_tenant_session`), rate limiting Valkey maison. Les deux TODO
-  Phase 1 sont couverts : membership dans `resolve_tenant` (T7), invitation du premier
-  owner au provisioning (T8). Hors périmètre : SSO entreprise SAML/OIDC par org
-  (Phase 8), SPA (Phase 3), connecteurs (Phase 5).
+- **Branche** : `claude/phase-2-handoff-review-yc44nn` (PR associée, plan fusionné via PR #4).
+- Livré, conformément au plan `docs/phase-2-auth-annuaire-plan.md` :
+  - `app/core/crypto.py` : `KeyProvider` AES-256-GCM (clé maître env, D4) —
+    réutilisable par les connecteurs Phase 5 ; `app/core/mailer.py` (SMTP optionnel,
+    D8) ; `app/core/csrf.py` (contrôle Origin sur mutations, D7).
+  - `app/auth/` : modèles (credentials argon2id, sessions token-haché D1,
+    oauth_identities, invitations, login_challenges, recovery codes), service
+    (login indistinct + re-hash D3, TOTP pyotp anti-rejeu par compteur, codes de
+    récupération à usage unique), router (login en 2 temps, totp setup/activate/
+    disable, me, logout, invitations/accept, oauth start/callback), `permissions.py`
+    (RBAC D6 : owner/admin/member en code, `require_permission` dépendance unique),
+    `rate_limit.py` (fenêtre fixe Valkey D9), `tasks.py` (purge beat horaire),
+    `oauth.py` (OIDC manuel + JOSE Authlib — PAS l'intégration Starlette : state
+    signé auto-porteur au lieu d'une session serveur ; testé par faux provider local).
+  - `resolve_tenant` croise désormais session x membership (TODO Phase 1 levé) :
+    401 non authentifié, 403 non membre ; contexte enrichi du rôle.
+  - `app/directory/` : invitations (token haché, usage unique, dernier owner
+    intouchable), annuaire (members list/patch/delete), équipes en DB TENANT
+    (`tenant_models.py`, migration tenant 0002) — premières routes traversant
+    `get_tenant_session()` en HTTP réel.
+  - CLI : `tenant create --owner-email` (invitation owner en fin de provisioning),
+    `invitation create` ; l'URL d'acceptation est toujours affichée (D8).
+  - Migrations : controlplane 0002 (auth), tenant 0002 (teams).
+  - 88 tests pytest verts (Postgres réel + fakeredis pour le rate limiting — la CI
+    n'a pas besoin de Redis) ; pyright strict 0 erreur ; client TS régénéré
+    (premières vraies routes du contrat).
+- **Pièges appris (en plus de ceux de la Phase 1)** : penser `reset_db_engines()`
+  à CHAQUE bascule pytest ↔ TestClient (helpers `tests/helpers.py`) ; l'intégration
+  Starlette d'Authlib exige SessionMiddleware → OIDC manuel avec state signé HMAC ;
+  anti-rejeu TOTP = compteur strictement croissant (les tests utilisent le pas de
+  temps suivant pour éviter la collision avec le code d'activation) ;
+  `TENANT_HEAD_REVISION` dans `tests/conftest.py` à bumper à chaque révision tenant.
 
 ## Prochaine étape (pour la session suivante)
 
-1. **Faire valider le plan Phase 2 par l'utilisateur** (décisions D1-D9 en particulier :
-   cookie parent-domain D2, KeyProvider maintenant D4, rôles en code D6, SMTP optionnel D8).
-2. Après validation : implémenter la Phase 2 en suivant `docs/phase-2-auth-annuaire-plan.md`
-   (tâches T1→T10, tests section D, critère de démo section E).
+1. Faire fusionner la PR Phase 2 ; dérouler le critère de démo (section E du plan
+   Phase 2) dès que la machine de staging existe (avec les apps OAuth Google/Microsoft
+   créées et `AUTH_MASTER_KEY`/`SESSION_COOKIE_DOMAIN`/`PUBLIC_BASE_URL` configurés).
+2. Ensuite : **Phase 3 — Frontends + back-office** (SPA login/gestion d'équipe,
+   back-office provisioning/supervision, lancer les vérifications d'apps OAuth pour
+   les scopes connecteurs). Même méthode : plan détaillé d'abord
+   (`docs/phase-3-...-plan.md`), validation utilisateur, puis implémentation.
 3. Toujours en attente côté staging : dérouler le critère de démo Phase 1 (section E du
    plan Phase 1) dès que la machine existe.
 
