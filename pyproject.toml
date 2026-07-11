@@ -1,0 +1,40 @@
+[tool.uv.workspace]
+members = ["apps/api"]
+
+# ---------------------------------------------------------------------------
+# Qualité Python — config partagée pour tout le workspace (invariant I5/I8)
+# ---------------------------------------------------------------------------
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["apps/api"]
+extend-exclude = [".venv"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # bugbear
+    "SIM", # simplify
+    "C4",  # comprehensions
+    "RUF", # ruff-specific
+]
+
+[tool.pyright]
+include = ["apps/api", "scripts"]
+exclude = ["**/__pycache__", ".venv"]
+# Résout `app` depuis les sources (et non l'install editable, vue comme lib sans stubs)
+extraPaths = ["apps/api"]
+typeCheckingMode = "strict"
+pythonVersion = "3.12"
+venvPath = "."
+venv = ".venv"
+
+[tool.pytest.ini_options]
+testpaths = ["apps/api/tests"]
+asyncio_mode = "auto"
+addopts = "-q"

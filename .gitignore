@@ -1,0 +1,23 @@
+# Environnement — jamais de secrets dans le repo (invariant I2)
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Artefacts générés non committés (le client TS, lui, est committé)
+openapi.json
+
+# Divers
+.DS_Store
+*.log
