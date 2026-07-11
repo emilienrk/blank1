@@ -103,7 +103,8 @@ Rôle : « déploiement continu vers staging dès le premier jour » (§9 Phase 
 
 | Fichier | Rôle |
 |---|---|
-| `.github/workflows/deploy-staging.yml` | Sur push `main` : build + push des images vers **GHCR**, puis job de déploiement exécuté par un **runner GitHub self-hosted sur la machine staging** (décision D4) : `docker compose pull && docker compose up -d`, puis `make smoke`. |
+| `.github/workflows/staging-images.yml` | Sur push `main` : build + push des images vers **GHCR** (`:sha` + `:latest`). *(Révision D4 : GitHub ne déploie pas — la machine tire.)* |
+| `scripts/deploy-pull.sh` + `infra/systemd/saas-deploy.{service,timer}` | Sur la machine staging, tick 5 min : `compose pull`, redéploiement seulement si une image a changé, smoke test HTTPS, verrou `flock`. |
 | `make smoke` | `curl` de `https://staging.<domaine>/api/v1/health` (via Caddy, donc TLS + reverse-proxy validés) + vérification du payload. |
 
 ### T10 — Clôture
@@ -120,7 +121,7 @@ Rôle : « déploiement continu vers staging dès le premier jour » (§9 Phase 
 | D1 | Makefile ou justfile ? | **Makefile** | Critère IA-friendly du plan global : l'outil le plus massivement représenté dans les données d'entraînement ; installé partout, y compris sur les runners CI. |
 | D2 | openapi-typescript + openapi-fetch, ou orval ? | **openapi-typescript + openapi-fetch** | Plus léger (types purs + fetch typé, quasi zéro code généré à maintenir), très stable. Orval (hooks TanStack générés) reste substituable plus tard sans toucher au contrat OpenAPI. |
 | D3 | Promtail ou Alloy pour la collecte ? | **Alloy** | Promtail est en fin de vie (EOL mars 2026) ; Alloy est le successeur officiel Grafana, et le cas d'usage (logs Docker → Loki) tient en une config courte. |
-| D4 | Comment déployer sur staging (IP résidentielle) ? | **Runner GitHub self-hosted sur la machine staging**, qui tire les images depuis GHCR | Aucune exposition SSH entrante — cohérent avec la sécurité périmétrique §8.6 (admin derrière WireGuard). Alternative documentée si le runner déplaît : SSH sortant via WireGuard depuis un runner cloud. |
+| D4 | Comment déployer sur staging (IP résidentielle) ? | ~~Runner GitHub self-hosted~~ → **révisé à l'implémentation : modèle pull** — la machine tire elle-même les images GHCR via un timer systemd (`scripts/deploy-pull.sh`, tick 5 min) | Choix utilisateur : zéro accès entrant ET zéro service GitHub sur la machine ; rattrapage au boot. Coût accepté : latence ≤ 5 min, résultat visible dans journalctl/Loki plutôt que GitHub Actions. |
 | D5 | Créer `apps/admin` maintenant ? | **Non — Phase 3** | Le plan global (§9) ne demande que les squelettes api/worker/web en Phase 0 ; `packages/ui` suffit à garantir que le câblage multi-app fonctionne. |
 | D6 | Préfixe `/api/v1` dès le premier endpoint ? | **Oui** | Versionner après coup casse le client généré et tous ses consommateurs ; le coût est nul maintenant. |
 
@@ -172,7 +173,7 @@ Si ce paragraphe est vrai de bout en bout, la Phase 0 est terminée et la Phase 
 
 1. **Nom de domaine + DNS** : requis avant T6/T9 (TLS Caddy, critère de démo), avec **wildcard `*.staging.<domaine>`** pour ne pas bloquer la résolution tenant par sous-domaine en Phase 1. → À provisionner en amont.
 2. **Machine de staging** : le plan global exige le staging dès le premier jour (§8.5). Si elle n'existe pas encore, décision à acter : soit on la provisionne avant T9, soit le critère de démo est temporairement réduit à un « staging local » (Compose sur la machine de dev) — à dire explicitement, pas par défaut.
-3. **Secrets et enregistrement manuels** : token GHCR (packages write), enregistrement du runner self-hosted, premier `.env` staging — actions manuelles hors CI, à documenter dans le README.
+3. **Secrets et enregistrement manuels** : PAT fine-grained lecture seule (`packages:read`) pour le `docker login ghcr.io` de la machine, clone du repo dans `/srv/saas/app`, premier `.env` staging, activation du timer systemd — actions manuelles hors CI, documentées dans le README.
 4. **Versions à figer explicitement** : Python 3.12, Node 22 LTS (pnpm via corepack), Postgres 17 — dans `pyproject.toml`, `.nvmrc`/`package.json#engines` et le Compose, jamais implicites.
 
 Aucune dépendance vers les phases ultérieures n'est requise pour démarrer : la Phase 0 est autoporteuse une fois les points 1–3 réglés.

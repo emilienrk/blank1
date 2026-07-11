@@ -69,25 +69,24 @@ Documents de référence, à lire dans cet ordre :
 3. **Mécanisme de déploiement** — décision ouverte, voir ci-dessous.
 4. Créer la branche `main` (cible du workflow de déploiement).
 
-## Décision ouverte : déploiement par runner self-hosted ou pull cron ?
+## Déploiement staging : modèle pull (décidé et implémenté)
 
-Deux options discutées avec l'utilisateur (le repo implémente actuellement l'option A) :
+L'utilisateur a choisi le **modèle pull** (au lieu du runner GitHub self-hosted,
+initialement retenu en D4 du plan de phase — décision révisée) :
 
-- **Option A (implémentée)** : runner GitHub self-hosted sur la machine staging,
-  job `deploy` déclenché par push sur `main`. Déploiement immédiat, logs/smoke visibles
-  dans GitHub Actions, token éphémère. Coût : un service de plus à maintenir, et le
-  runner exécute du code défini par les workflows du repo.
-- **Option B (préférence exprimée par l'utilisateur)** : la machine tire elle-même
-  (cron/systemd timer) : script qui compare le digest de `ghcr.io/...:latest`, fait
-  `compose pull && up -d` si nouveau, smoke, log. Zéro exposition et zéro service
-  GitHub sur la machine ; coût : latence de quelques minutes, résultat du déploiement
-  visible seulement dans Loki (pas dans Actions), PAT fine-grained `packages:read`
-  stocké sur la machine.
-
-Si l'utilisateur confirme l'option B : supprimer le job `deploy` de
-`deploy-staging.yml` (garder build+push GHCR), ajouter `scripts/deploy-pull.sh` +
-unité systemd timer documentée dans le README. Recommandation : systemd timer plutôt
-que cron (journalisation, verrou anti-chevauchement via `flock`, `OnBootSec`).
+- `.github/workflows/staging-images.yml` : sur push `main`, build + push des images
+  vers GHCR (`:sha` + `:latest`). C'est tout ce que fait GitHub.
+- `scripts/deploy-pull.sh` (exécuté PAR la machine staging via
+  `infra/systemd/saas-deploy.timer`, tick 5 min + `OnBootSec`) : `git fetch` best
+  effort des fichiers compose, `compose pull`, redéploiement **uniquement si l'ID
+  d'image api ou web a changé**, puis smoke test HTTPS avec retries et
+  `docker image prune`. Verrou `flock` anti-chevauchement.
+- Justification : zéro accès entrant et zéro service GitHub sur la machine
+  (IP résidentielle, §8.6 du plan global) ; rattrapage automatique au boot.
+  Coût accepté : latence ≤ 5 min, résultat du déploiement visible dans
+  `journalctl -u saas-deploy.service` (pas dans GitHub Actions), PAT fine-grained
+  lecture seule (`packages:read`) stocké sur la machine.
+- Mise en place initiale documentée dans le README (section « Déploiement staging »).
 
 ## Prochaine étape : Phase 1 — Socle multi-tenant
 
