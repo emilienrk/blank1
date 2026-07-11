@@ -6,7 +6,8 @@ migrations tenant → seed → `active`. Sur échec : `failed` + erreur loggée 
 
 Invariant I6 : CREATE/DROP DATABASE sont les seuls endroits où un identifiant
 est interpolé — toujours après validation regex stricte + quoting.
-TODO Phase 2 : invitation du premier owner à la fin du provisioning.
+L'invitation du premier owner (Phase 2) est composée au niveau CLI :
+`saas tenant create --owner-email` enchaîne provisioning puis invitation.
 """
 
 import asyncio
