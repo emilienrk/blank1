@@ -1,7 +1,7 @@
 # Passation de session — état du projet et reprise
 
 > Document destiné à une nouvelle session (Claude/Fable) pour continuer le travail
-> sans re-dériver le contexte. Dernière mise à jour : 2026-07-11 (session « plan Phase 1 »).
+> sans re-dériver le contexte. Dernière mise à jour : 2026-07-11 (session « plan Phase 2 »).
 
 ## Le projet en bref
 
@@ -13,10 +13,12 @@ IA → stack volontairement mûre et sur-documentée (FastAPI, SQLAlchemy, Celer
 Documents de référence, à lire dans cet ordre :
 1. `docs/architecture-plan.md` — plan global (stack, architecture, 9 phases). **Toutes
    les décisions d'architecture y sont actées : ne pas les rouvrir sans demande explicite.**
-2. `docs/phase-1-socle-multi-tenant-plan.md` — plan détaillé de la phase courante
-   (tâches T1-T10, décisions D1-D8, invariants, tests, critère de démo). **C'est le
-   document de travail actuel.**
-3. `docs/phase-0-fondations-plan.md` — plan de la phase précédente (implémentée, fusionnée).
+2. `docs/phase-2-auth-annuaire-plan.md` — plan détaillé de la phase courante
+   (tâches T1-T10, décisions D1-D9, invariants, tests, critère de démo). **C'est le
+   document de travail actuel — EN ATTENTE DE VALIDATION UTILISATEUR, ne pas
+   implémenter avant.**
+3. `docs/phase-1-socle-multi-tenant-plan.md` et `docs/phase-0-fondations-plan.md` —
+   plans des phases précédentes (implémentées, fusionnées).
 4. `CLAUDE.md` (racine) et `apps/api/CLAUDE.md` — conventions et invariants opérationnels.
 
 ## État actuel
@@ -31,9 +33,9 @@ Caddy, Loki/Grafana/Alloy, Uptime Kuma), déploiement staging en modèle pull
 (`scripts/deploy-pull.sh` + timer systemd). Détail complet : `docs/phase-0-fondations-plan.md`
 et le README.
 
-### Phase 1 : IMPLÉMENTÉE ✅ (plan validé par l'utilisateur, décisions D1-D8 suivies)
+### Phase 1 : FUSIONNÉE ✅ (PR #3, plan validé par l'utilisateur, décisions D1-D8 suivies)
 
-- **Branche** : `claude/next-phase-detailed-plan-twlm2j` (PR associée).
+- **Branche** : `claude/next-phase-detailed-plan-twlm2j` (PR #3, fusionnée).
 - Livré, conformément au plan `docs/phase-1-socle-multi-tenant-plan.md` :
   - Control-plane : `tenants` (catalogue, D3 : jamais d'URL/credentials en base),
     `users` + `memberships` (identités globales minimales, zéro credential) ;
@@ -90,17 +92,27 @@ et le README.
 3. **Machine de staging** : Docker + `/srv/saas/.env` + PAT `packages:read` + timer
    systemd (procédure complète dans le README, section « Déploiement staging »).
 
+### Phase 2 : PLAN RÉDIGÉ, EN ATTENTE DE VALIDATION ⏳
+
+- **Branche** : `claude/phase-2-handoff-review-yc44nn` (cette session).
+- `docs/phase-2-auth-annuaire-plan.md` : sessions serveur (DB control-plane, cookie
+  parent-domain), argon2id, TOTP (secrets chiffrés via un `KeyProvider` AES-256-GCM
+  minimal introduit en T2), OAuth login Google/Microsoft (Authlib, invitation only),
+  RBAC (`require_permission`, rôles owner/admin/member en code), invitations (URL
+  toujours retournée à l'appelant, SMTP optionnel), équipes en DB tenant (première
+  vraie route via `get_tenant_session`), rate limiting Valkey maison. Les deux TODO
+  Phase 1 sont couverts : membership dans `resolve_tenant` (T7), invitation du premier
+  owner au provisioning (T8). Hors périmètre : SSO entreprise SAML/OIDC par org
+  (Phase 8), SPA (Phase 3), connecteurs (Phase 5).
+
 ## Prochaine étape (pour la session suivante)
 
-1. Faire fusionner la PR Phase 1 ; dérouler le critère de démo staging (section E du
+1. **Faire valider le plan Phase 2 par l'utilisateur** (décisions D1-D9 en particulier :
+   cookie parent-domain D2, KeyProvider maintenant D4, rôles en code D6, SMTP optionnel D8).
+2. Après validation : implémenter la Phase 2 en suivant `docs/phase-2-auth-annuaire-plan.md`
+   (tâches T1→T10, tests section D, critère de démo section E).
+3. Toujours en attente côté staging : dérouler le critère de démo Phase 1 (section E du
    plan Phase 1) dès que la machine existe.
-2. Ensuite : **Phase 2 — Auth + annuaire** (sessions, argon2, TOTP, OAuth login
-   Google/Microsoft via Authlib, orgs/équipes/rôles/permissions, invitations).
-   Même méthode : plan détaillé d'abord (`docs/phase-2-...-plan.md`), validation
-   utilisateur, puis implémentation. La Phase 2 branche session + membership dans
-   `resolve_tenant` (TODO tracé dans `app/tenancy/deps.py`), consomme
-   `users`/`memberships` et ajoute l'invitation du premier owner au provisioning
-   (TODO tracé dans `app/tenancy/provisioning.py`).
 
 ## Commandes utiles
 
