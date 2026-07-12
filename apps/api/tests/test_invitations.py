@@ -12,9 +12,9 @@ from app.auth.models import Invitation
 from app.core.config import Settings
 from app.core.db import get_control_sessionmaker
 from app.main import create_app
+from app.tenancy.provisioning import provision_tenant
 from tests.conftest import requires_postgres
 from tests.helpers import (
-    add_catalog_tenant,
     add_membership,
     create_session_token,
     create_user,
@@ -31,7 +31,7 @@ def _token_from_accept_url(accept_url: str) -> str:
 
 
 async def test_invitation_full_cycle_new_user(db_env: Settings) -> None:
-    tenant = await add_catalog_tenant("acme")
+    tenant = await provision_tenant("acme", "ACME")
     admin = await create_user("admin@example.com")
     await add_membership(admin.id, tenant.id, "admin")
     admin_token = await create_session_token(admin.id)
@@ -75,8 +75,8 @@ async def test_invitation_full_cycle_new_user(db_env: Settings) -> None:
 
 
 async def test_invitation_existing_user_joins_second_tenant(db_env: Settings) -> None:
-    acme = await add_catalog_tenant("acme")
-    globex = await add_catalog_tenant("globex")
+    acme = await provision_tenant("acme", "ACME")
+    globex = await provision_tenant("globex", "Globex")
     owner = await create_user("owner@example.com")
     await add_membership(owner.id, globex.id, "owner")
     owner_token = await create_session_token(owner.id)
@@ -114,7 +114,7 @@ async def test_invitation_existing_user_joins_second_tenant(db_env: Settings) ->
 
 
 async def test_expired_and_unknown_invitations_rejected(db_env: Settings) -> None:
-    tenant = await add_catalog_tenant("acme")
+    tenant = await provision_tenant("acme", "ACME")
     admin = await create_user("admin@example.com")
     await add_membership(admin.id, tenant.id, "admin")
     admin_token = await create_session_token(admin.id)
@@ -149,7 +149,7 @@ async def test_expired_and_unknown_invitations_rejected(db_env: Settings) -> Non
 
 
 async def test_duplicate_pending_invitation_rejected_and_revocable(db_env: Settings) -> None:
-    tenant = await add_catalog_tenant("acme")
+    tenant = await provision_tenant("acme", "ACME")
     admin = await create_user("admin@example.com")
     await add_membership(admin.id, tenant.id, "admin")
     admin_token = await create_session_token(admin.id)
@@ -182,7 +182,7 @@ async def test_duplicate_pending_invitation_rejected_and_revocable(db_env: Setti
 
 
 async def test_list_pending_invitations(db_env: Settings) -> None:
-    tenant = await add_catalog_tenant("acme")
+    tenant = await provision_tenant("acme", "ACME")
     admin = await create_user("admin@example.com")
     await add_membership(admin.id, tenant.id, "admin")
     admin_token = await create_session_token(admin.id)
@@ -215,7 +215,7 @@ async def test_list_pending_invitations(db_env: Settings) -> None:
 
 
 async def test_inviting_existing_member_rejected(db_env: Settings) -> None:
-    tenant = await add_catalog_tenant("acme")
+    tenant = await provision_tenant("acme", "ACME")
     admin = await create_user("admin@example.com")
     await add_membership(admin.id, tenant.id, "admin")
     admin_token = await create_session_token(admin.id)

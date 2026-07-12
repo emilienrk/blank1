@@ -29,7 +29,7 @@ def _postgres_available() -> bool:
 POSTGRES_AVAILABLE = _postgres_available()
 
 # Révision head du schéma tenant — à faire évoluer avec chaque nouvelle révision.
-TENANT_HEAD_REVISION = "0002_tenant_teams"
+TENANT_HEAD_REVISION = "0003_tenant_audit_events"
 
 # Les tests DB exigent un vrai Postgres (décision D6) : celui du Compose en local
 # (`make infra`), le service postgres:17 en CI.
