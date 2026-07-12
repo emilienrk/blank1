@@ -1,6 +1,6 @@
 # Socle SaaS B2B multi-tenant — conventions du monorepo
 
-Plans de référence : `docs/architecture-plan.md` (global) et `docs/phase-3-frontends-backoffice-plan.md` (phase courante — plan validé, implémenté).
+Plans de référence : `docs/architecture-plan.md` (global) et `docs/phase-4-audit-rgpd-plan.md` (phase courante — plan validé, implémenté).
 
 ## Carte du repo
 
@@ -45,6 +45,17 @@ Tout passe par le `Makefile` : `make install`, `make dev`, `make lint`, `make ty
 10. **Toute route `/api/v1/admin/*` exige `require_platform_admin`** (Phase 3), sans
     exception. `is_platform_admin` ne se pose JAMAIS via l'API : uniquement
     `saas admin grant/revoke` (CLI, accès shell machine requis).
+11. **L'audit est append-only** (Phase 4) : toute action métier significative du socle
+    écrit son événement via `record_audit_event`/`record_audit_event_for_tenant`
+    (`app.audit.service`) dans la même transaction que l'action auditée — table
+    `audit_events` en **DB tenant**, jamais dupliquée en clair dans les logs techniques
+    (invariant n°4). Aucune route de modification/suppression en dehors de la politique
+    de rétention (`app.gdpr.retention`).
+12. **L'effacement RGPD passe toujours par le délai de grâce** (`app.gdpr.erasure`) :
+    aucun chemin de `DROP DATABASE` direct hors `execute_pending_erasures` (et le
+    `retry-provision` de la Phase 1, qui ne droppe que des bases jamais devenues
+    `active`). Les exports RGPD sont chiffrés au repos, à durée de vie bornée, et ne
+    sont jamais servis par la surface publique.
 
 ## Conventions
 

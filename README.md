@@ -3,7 +3,8 @@
 Socle commun réutilisable (auth multi-tenant, connecteurs externes, couche IA
 multi-fournisseurs, logs, RGPD) pour des modules d'automatisation métier.
 Plans : [architecture globale](docs/architecture-plan.md) ·
-[Phase 3 — Frontends + back-office](docs/phase-3-frontends-backoffice-plan.md).
+[Phase 3 — Frontends + back-office](docs/phase-3-frontends-backoffice-plan.md) ·
+[Phase 4 — Audit + socle RGPD](docs/phase-4-audit-rgpd-plan.md).
 
 ## Stack
 
@@ -127,6 +128,51 @@ uv run saas admin grant alice@example.com   # is_platform_admin = true (jamais v
 uv run saas admin revoke alice@example.com
 ```
 
+## Audit + RGPD (Phase 4)
+
+**Audit** : chaque action métier significative du socle (invitations, rôles, retraits,
+équipes) écrit un événement dans `audit_events`, une table **DB tenant** (donnée du
+client, jamais dans les logs techniques), dans la **même transaction** que l'action
+auditée quand c'est architecturalement possible (équipes, tenant-only) — au pire un
+événement orphelin plutôt qu'une action sans trace, pour les actions control-plane
+(invitations, rôles). Consultable dans la SPA client (page « Journal d'audit »,
+pagination par curseur, filtres) par `owner`/`admin` uniquement — `core.audit.read`,
+403 pour `member`. Append-only : aucune route ni fonction de modification/suppression
+en dehors de la politique de rétention.
+
+**Export RGPD** (opérateur uniquement, pas de self-service tenant) :
+
+```bash
+uv run saas tenant export acme   # pg_dump -Fc + extrait control-plane + manifeste,
+                                  # archive chiffrée (KeyProvider), TTL 7 j par défaut
+```
+
+Équivalent back-office : `POST /api/v1/admin/tenants/{slug}/export` (dispatch Celery,
+ne bloque jamais la requête HTTP) puis `GET .../exports` pour le lien de téléchargement.
+
+**Effacement RGPD**, en deux temps (délai de grâce, irréversible passé ce délai) :
+
+```bash
+uv run saas tenant delete acme          # re-saisie du slug exigée ; inaccessible immédiatement
+uv run saas tenant cancel-delete acme   # annulation pendant le délai de grâce
+```
+
+Après `GDPR_ERASURE_GRACE_DAYS` (déf. 7 j), la tâche beat horaire
+`core.gdpr.execute_pending_erasures` droppe la base, purge le catalogue (memberships,
+invitations, users devenus orphelins) et écrit une trace minimale dans `erasure_log`
+(control-plane, sans donnée métier). Équivalents back-office :
+`POST /api/v1/admin/tenants/{slug}/request-erasure` / `.../cancel-erasure`.
+
+**Rétention** : registre de politiques par type de donnée (`app.gdpr.retention`),
+appliqué quotidiennement par tenant (`core.gdpr.apply_retention_policies`, purge par
+lots) ; surchargeable par tenant via `tenant_settings` (clé `retention.<type>`, en
+jours). Variables clés (voir `.env.example`) : `AUDIT_RETENTION_DAYS` (déf. 365),
+`GDPR_EXPORT_DIR`/`GDPR_EXPORT_TTL_DAYS`, `GDPR_ERASURE_GRACE_DAYS`. Procédure
+opérateur complète (dont la purge manuelle des backups pgBackRest, assumée jusqu'à la
+Phase 8) : [`docs/runbook-gdpr.md`](docs/runbook-gdpr.md). Trames RGPD non techniques
+(registre des traitements, sous-traitants, notification de violation) :
+[`docs/rgpd/`](docs/rgpd/).
+
 ## Déploiement staging (modèle pull)
 
 Chaque push sur `main` : la CI passe, puis `staging-images.yml` publie les images
@@ -175,3 +221,17 @@ d'invitation owner s'affiche), déclenche le runner de migrations et lit le rapp
 par base. Depuis Internet, le back-office et `/api/v1/admin/*` sont injoignables.
 Détail complet : section E de
 [`docs/phase-3-frontends-backoffice-plan.md`](docs/phase-3-frontends-backoffice-plan.md).
+
+## Critère de démo — Phase 4
+
+Sur staging : Alice (owner d'`acme`) invite un membre, change son rôle, crée une
+équipe — la page « Journal d'audit » montre les événements horodatés avec acteur ;
+Bob (`member`) reçoit 403 sur cette page. L'opérateur lance `saas tenant export acme` :
+l'archive chiffrée apparaît, se déchiffre et se restaure dans une base jetable. Il
+exécute ensuite `saas tenant delete globex` (re-saisie du slug) : `globex.<domaine>`
+répond 403 immédiatement ; `cancel-delete` le ranime ; re-demande puis passage du délai
+de grâce (raccourci en staging) : la DB n'existe plus, le catalogue est purgé,
+`erasure_log` en garde la trace minimale, et les users uniquement membres de `globex`
+ont disparu du control-plane. La purge de rétention quotidienne tourne et se voit dans
+Loki (rapport par tenant, sans PII). Détail complet : section E de
+[`docs/phase-4-audit-rgpd-plan.md`](docs/phase-4-audit-rgpd-plan.md).

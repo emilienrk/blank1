@@ -2,7 +2,7 @@
 
 > Document destiné à une nouvelle session (Claude/Fable) pour continuer le travail
 > sans re-dériver le contexte. Dernière mise à jour : 2026-07-12 (session
-> « implémentation Phase 3 »).
+> « implémentation Phase 4 »).
 
 ## Le projet en bref
 
@@ -216,16 +216,82 @@ et le README.
    staging) reste valable et bloque le déroulé du critère de démo Phase 3 en conditions
    réelles.
 
+### Phase 4 : IMPLÉMENTÉE ✅ (plan `docs/phase-4-audit-rgpd-plan.md` suivi, T1-T10)
+
+- Livré, conformément au plan :
+  - `app/audit/` : table tenant `audit_events` (append-only, migration tenant 0003) ;
+    `record_audit_event`/`record_audit_event_for_tenant` (registre typé `ACTIONS`,
+    décision D1 — même transaction quand l'action est tenant-only comme les équipes ;
+    au pire un événement orphelin, jamais une action sans trace, pour les actions
+    control-plane comme invitations/rôles, qui restent cross-database) ; instrumentation
+    de `app/directory/router.py` (invitations créée/révoquée/acceptée, rôle modifié,
+    membre retiré, équipe créée/supprimée, membre d'équipe ajouté/retiré) et de
+    `app/tenancy/provisioning.py` (`core.tenant.provisioned`, acteur `cli`) ; route
+    `GET /api/v1/audit/events` (curseur `(occurred_at, id)`, filtres, permission
+    `core.audit.read` owner/admin only) ; page SPA `apps/web/src/pages/audit.tsx`
+    (pagination infinie, filtre par action, détail du payload).
+  - `app/gdpr/` : `export.py` (`pg_dump -Fc` + extrait control-plane JSON + manifeste,
+    archive tar chiffrée `KeyProvider`, TTL `gdpr_export_ttl_days`) ; `erasure.py`
+    (machine à deux temps D2 : `TenantState.PENDING_DELETION` + `deletion_requested_at`
+    — `resolve_tenant` refuse comme `suspended` — puis `execute_pending_erasures` beat
+    horaire : `DROP DATABASE` via `provisioning.drop_database_if_exists`, purge
+    memberships/invitations, users orphelins supprimés (décision D6), `erasure_log`
+    control-plane, `TenantEngineManager.invalidate`) ; `retention.py` (registre de
+    politiques, `audit_events` en premier, surcharge `tenant_settings` clé
+    `retention.<type>`, purge par lots de 5000 décision D7) ; `tasks.py` (dispatch
+    export + 3 tâches beat : rétention quotidienne, effacements horaire, purge
+    exports horaire — ajoutées à `app/worker.py` beat_schedule).
+  - CLI (`app/cli.py`) : `tenant export`, `tenant delete` (confirmation par re-saisie
+    du slug), `tenant cancel-delete`. Back-office (`app/admin/router.py`) : export
+    (dispatch Celery + liste + téléchargement), request/cancel-erasure — SPA
+    `apps/admin/src/pages/tenants.tsx` étendue (boutons RGPD, section exports).
+  - Migrations : tenant 0003 (`audit_events`), controlplane 0004
+    (`tenants.deletion_requested_at` + table `erasure_log`).
+  - Docs non techniques versionnées : `docs/rgpd/{registre-traitements,
+    sous-traitants,notification-violation}.md`, `docs/runbook-gdpr.md`.
+  - 25 nouveaux tests pytest (`test_audit_events.py`, `test_gdpr_export.py` — dump
+    réellement restauré via `pg_restore` dans une base jetable —, `test_gdpr_erasure.py`,
+    `test_retention.py`, extension `test_cli.py`/`test_admin_routes.py`) ; **122 tests
+    pytest** au total ; 4 nouveaux tests vitest (`audit.test.tsx`) ; pyright strict et
+    ruff 0 erreur ; client TS régénéré.
+- **Écart assumé** : deux tests pré-existants (`test_invitations.py`,
+  `test_permissions.py::test_permission_matrix_over_http`) utilisaient
+  `add_catalog_tenant` (tenant au catalogue sans base réelle provisionnée, raccourci
+  pour des tests HTTP purs) sur des routes qui n'écrivaient jusqu'ici que dans le
+  control-plane. Ces routes touchent désormais aussi la DB tenant (audit) : basculés
+  sur `provision_tenant` (base réelle). Les tests qui ne franchissent jamais le point
+  d'écriture de l'audit (règles métier refusées en amont, ex. dernier owner
+  intouchable) continuent de fonctionner avec `add_catalog_tenant` — la session tenant
+  SQLAlchemy est paresseuse (pas de connexion tant qu'aucune requête n'est exécutée).
+- **Piège appris** : basculer entre deux `TestClient(create_app())` successifs (ou
+  entre un `TestClient` et un appel direct dans la boucle pytest) exige
+  `await reset_db_engines()` à CHAQUE bascule, y compris entre deux `with TestClient`
+  consécutifs dans le même test (pas seulement pytest ↔ TestClient comme documenté
+  jusqu'ici) — sinon `RuntimeError: ... attached to a different loop` sur les pools
+  asyncpg.
+- **Gap préexistant comblé** : aucun service `celery beat` n'existait dans
+  `docker-compose.yml` depuis la Phase 2 (le `beat_schedule` était déclaré mais rien ne
+  le lançait — la purge auth horaire ne tournait donc jamais en pratique). Corrigé ici
+  avec un nouveau service `beat` (même image `api`/`worker`, commande `celery beat`,
+  process séparé du `worker` par recommandation Celery) — nécessaire pour que les
+  tâches de rétention/effacement/purge exports de cette phase tournent réellement.
+- **Non vérifié** (comme toutes les phases précédentes, faute de daemon Docker en
+  session) : `docker compose up` réel — en particulier le volume `gdpr_exports`, le
+  nouveau service `beat`, et l'image `api`/`worker` avec `postgresql-client-17`
+  (ajouté au `Dockerfile`, jamais testé en conteneur).
+
 ## Prochaine étape (pour la session suivante)
 
-1. Faire fusionner la PR Phase 3 ; dérouler le critère de démo (section E du plan
-   Phase 3 / README) dès que la machine de staging existe.
-2. Lancer T9 (vérifications OAuth) dès que possible — hors repo, voir ci-dessus.
-3. Ensuite : **Phase 4 — Audit + socle RGPD** (`docs/phase-4-audit-rgpd-plan.md`,
-   déjà rédigé) — le faire valider par l'utilisateur (état des lieux à reconfronter
-   au réel, Phase 3 vient de changer la surface front), puis implémenter. Les plans
-   des phases 5 à 8 sont également rédigés, même méthode à chaque phase.
-4. Toujours en attente côté staging : dérouler les critères de démo Phases 0-3 dès que
+1. Faire fusionner la PR Phase 4 ; dérouler le critère de démo (section E du plan
+   Phase 4 / README) dès que la machine de staging existe — vérifier en particulier
+   que le nouveau service `beat` tourne bien (jamais testé en conteneur réel).
+2. Lancer T9 Phase 3 (vérifications OAuth) dès que possible — hors repo, toujours en
+   attente, voir ci-dessus.
+3. Ensuite : **Phase 5 — Framework connecteurs Google/Microsoft**
+   (`docs/phase-5-connecteurs-plan.md`, déjà rédigé) — le faire valider par
+   l'utilisateur (état des lieux à reconfronter au réel), puis implémenter. Les plans
+   des phases 6 à 8 sont également rédigés, même méthode à chaque phase.
+4. Toujours en attente côté staging : dérouler les critères de démo Phases 0-4 dès que
    la machine existe.
 
 ## Commandes utiles
