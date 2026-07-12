@@ -57,6 +57,18 @@ class Settings(BaseSettings):
     microsoft_client_id: str = ""
     microsoft_client_secret: str = ""
 
+    # --- Connecteurs externes (Phase 5) ---
+    # Apps OAuth DISTINCTES du login (décision D3 Phase 5) : les scopes sensibles
+    # (Gmail, Calendars, Graph) vivent sur leur propre cycle de vie.
+    google_connector_client_id: str = ""
+    google_connector_client_secret: str = ""
+    microsoft_connector_client_id: str = ""
+    microsoft_connector_client_secret: str = ""
+    # Avance du refresh proactif sur l'expiration des access tokens (T6).
+    connector_refresh_lead_minutes: int = 10
+    # Base publique des webhooks entrants — vide = public_base_url.
+    connector_webhook_base_url: str = ""
+
     # --- Emails transactionnels (décision D8 : SMTP optionnel) ---
     smtp_host: str = ""
     smtp_port: int = 587
@@ -90,6 +102,10 @@ class Settings(BaseSettings):
     @property
     def session_cookie_secure(self) -> bool:
         return self.app_env != "dev"
+
+    @property
+    def connector_webhook_base(self) -> str:
+        return self.connector_webhook_base_url or self.public_base_url
 
     def _database_url(self, database: str, host: str | None = None) -> str:
         url = URL.create(

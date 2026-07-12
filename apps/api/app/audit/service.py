@@ -16,11 +16,16 @@ from app.tenancy.context import TenantContext
 from app.tenancy.engine_manager import get_engine_manager
 from app.tenancy.models import Tenant
 
-# Registre typé des actions connues (namespace `core.*` — `connector.*`/`module_x.*`
-# réservés aux phases suivantes, simple convention de nommage).
+# Registre typé des actions connues (namespaces `core.*` pour le socle,
+# `connector.*` pour la Phase 5 — `module_x.*` réservé aux modules métier).
 ACTIONS: frozenset[str] = frozenset(
     {
         "core.tenant.provisioned",
+        "connector.connected",
+        "connector.reconsent_required",
+        "connector.revoked",
+        "connector.subscription_renewal_failed",
+        "connector.event_received",
         "core.member.invited",
         "core.member.invitation_revoked",
         "core.member.invitation_accepted",

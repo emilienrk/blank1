@@ -2,7 +2,7 @@
 
 > Document destiné à une nouvelle session (Claude/Fable) pour continuer le travail
 > sans re-dériver le contexte. Dernière mise à jour : 2026-07-12 (session
-> « implémentation Phase 4 »).
+> « implémentation Phase 5 »).
 
 ## Le projet en bref
 
@@ -280,19 +280,78 @@ et le README.
   nouveau service `beat`, et l'image `api`/`worker` avec `postgresql-client-17`
   (ajouté au `Dockerfile`, jamais testé en conteneur).
 
+### Phase 5 : IMPLÉMENTÉE ✅ (plan `docs/phase-5-connecteurs-plan.md` suivi, T1-T10)
+
+- Livré, conformément au plan :
+  - `app/connectors/` : modèles tenant `connector_connections`/`connector_subscriptions`
+    (tokens chiffrés `KeyProvider`, migration tenant 0004) + control-plane `webhook_routes`
+    (routage seul, migration control-plane 0005, décision D6) ; registre de providers
+    (`registry.py`, `ProviderManifest` figé) + manifests Google/Microsoft ; flux OAuth
+    tiers (`oauth.py` : start sous tenant `core.connectors.manage`, callback anonyme sur
+    l'apex reposant le contexte depuis le state signé, création `webhook_routes`, audit
+    `connector.connected`) ; router de gestion (`router.py` : list `core.connectors.read`,
+    revoke/reconsent `core.connectors.manage`) ; capabilities normalisées
+    (`capabilities.py` : `MailCapability`/`CalendarCapability`, `EmailMessage`/
+    `CalendarEvent`, `get_capability`) + `client_base.py` (refresh à la volée sous verrou,
+    `anyio.to_thread` pour les SDK sync, enveloppe throttle) ; implémentations Google
+    (`google-api-python-client`) et Microsoft (Graph REST via `httpx`) sous
+    `providers/{google,microsoft}/{mail,calendar}.py` ; refresh proactif + renouvellement
+    subscriptions + événements webhook (`tasks.py`, beats à 5 min et horaire dans
+    `worker.py`) ; throttle/backoff + verrous Valkey (`throttle.py`) ; webhooks entrants
+    (`webhooks.py` : validation providers, registre interne `on_connector_event` — D7).
+  - Permissions `core.connectors.read` (tous rôles) / `core.connectors.manage`
+    (owner/admin) ajoutées à `app/auth/permissions.py` ; actions d'audit `connector.*`
+    ajoutées au registre `app/audit/service.py`. Deux routes anonymes ajoutées à la liste
+    fermée (invariant n°9) : `connectors/{provider}/callback`, `webhooks/{provider}/{route_key}`.
+  - `apps/web` : page `connectors.tsx` (liste, statuts/santé, connecter Google/Microsoft,
+    re-consentement conditionnel, révocation avec confirmation) + route + entrée de nav ;
+    5 tests vitest `connectors.test.tsx`. Client TS régénéré.
+  - **33 nouveaux tests pytest** (`test_connector_throttle.py`, `test_connector_oauth.py`,
+    `test_connector_capabilities.py`, `test_connector_refresh.py`, `test_connector_webhooks.py`,
+    `test_connector_routes.py`, + helpers `tests/connector_helpers.py`) — **155 tests pytest
+    au total** ; côté front 26 vitest web (dont 5 `connectors.test.tsx`) + 9 admin ;
+    pyright strict et ruff 0 erreur. Faux providers locaux
+    (`httpx.MockTransport` + manifests surchargés via `registry.override_provider`),
+    fakeredis pour throttle/verrous — aucun test ne touche un vrai provider.
+- **Écart au plan assumé (D2)** : `msal` n'a PAS été ajouté. L'échange/refresh OAuth des
+  deux providers passe par `httpx` contre les endpoints du manifest (même mécanique que
+  l'OIDC manuel Phase 2) — le cache de tokens mémoire de `msal` entrerait en conflit avec
+  le store chiffré en DB et le verrou de refresh par connexion. Les appels Graph métier
+  restent en `httpx` REST direct (pas de `msgraph-sdk`), conformes au plan. Dépendances
+  ajoutées : `google-api-python-client`, `google-auth`, `anyio`.
+- **Écart au plan assumé (Gmail webhooks)** : Gmail ne pousse que via Cloud Pub/Sub (pas
+  de webhook HTTP direct) — seul le channel Google Calendar est implémenté côté Google.
+  La capability mail Google fonctionne (list/get/send) mais sans notification entrante
+  dans cette phase (documenté au README, risque n°4 du plan). Microsoft a ses deux
+  subscriptions (Mail + Calendar) Graph.
+- **Pièges re-payés** (déjà au handoff) : `await reset_db_engines()` à CHAQUE bascule
+  boucle pytest ↔ TestClient, y compris avant de re-toucher la DB après un bloc
+  `with TestClient` (sinon `RuntimeError: attached to a different loop`) ;
+  `get_settings.cache_clear()` après tout `monkeypatch.setenv` d'une variable lue par un
+  handler ; `TENANT_HEAD_REVISION` dans `conftest.py` bumpé à `0004_tenant_connectors`.
+- **Piège nouveau** : pyright `reportUnusedFunction` flague les fixtures autouse au niveau
+  module dont le nom commence par `_` (considérées privées) — les nommer sans underscore
+  de tête (les fixtures de `conftest.py` échappent au flag pour cette raison).
+- **Non vérifié** (comme toutes les phases, faute de daemon Docker en session et de vrais
+  comptes providers) : `docker compose up` réel ; le critère de démo E (comptes de test
+  Google Workspace + Microsoft 365, consentement réel, webhook déclenché depuis Internet).
+
 ## Prochaine étape (pour la session suivante)
 
-1. Faire fusionner la PR Phase 4 ; dérouler le critère de démo (section E du plan
-   Phase 4 / README) dès que la machine de staging existe — vérifier en particulier
-   que le nouveau service `beat` tourne bien (jamais testé en conteneur réel).
-2. Lancer T9 Phase 3 (vérifications OAuth) dès que possible — hors repo, toujours en
-   attente, voir ci-dessus.
-3. Ensuite : **Phase 5 — Framework connecteurs Google/Microsoft**
-   (`docs/phase-5-connecteurs-plan.md`, déjà rédigé) — le faire valider par
-   l'utilisateur (état des lieux à reconfronter au réel), puis implémenter. Les plans
-   des phases 6 à 8 sont également rédigés, même méthode à chaque phase.
-4. Toujours en attente côté staging : dérouler les critères de démo Phases 0-4 dès que
-   la machine existe.
+1. Faire fusionner la PR Phase 5 ; dérouler le critère de démo (section E du plan Phase 5)
+   dès que la machine de staging + les comptes de test providers existent — c'est la
+   première surface entrante depuis Internet (webhooks) : vérifier Caddy et le HTTPS public.
+2. **T9 Phase 3 — vérifications d'apps OAuth Google/Microsoft** (scopes connecteurs
+   Gmail/Calendar/Graph) : toujours en attente, hors repo, désormais BLOQUANT pour de
+   vrais clients (l'app Google est plafonnée à 100 utilisateurs de test sans validation).
+   Créer aussi les apps OAuth connecteurs dédiées (distinctes du login, voir README).
+3. Provisionner les comptes de test (hors repo) : un tenant Google Workspace + un tenant
+   Microsoft 365 de dev, indispensables pour la démo E (les tests auto n'en dépendent pas).
+4. Ensuite : **Phase 6 — AI Gateway multi-providers** (`docs/phase-6-ai-gateway-plan.md`,
+   déjà rédigé) — le faire valider par l'utilisateur (état des lieux à reconfronter au
+   réel), puis implémenter. Plans 7-8 également rédigés, même méthode.
+5. Toujours en attente côté staging : dérouler les critères de démo Phases 0-5 dès que la
+   machine existe.
 
 ## Commandes utiles
 

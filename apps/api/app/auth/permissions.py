@@ -30,12 +30,20 @@ PERMISSIONS: frozenset[str] = frozenset(
         "core.teams.manage",
         "core.tenant.settings",
         "core.audit.read",
+        "core.connectors.read",
+        "core.connectors.manage",
     }
 )
 
-_MEMBER_PERMISSIONS = frozenset({"core.members.read", "core.teams.read"})
+_MEMBER_PERMISSIONS = frozenset({"core.members.read", "core.teams.read", "core.connectors.read"})
 _ADMIN_PERMISSIONS = _MEMBER_PERMISSIONS | frozenset(
-    {"core.members.manage", "core.teams.manage", "core.tenant.settings", "core.audit.read"}
+    {
+        "core.members.manage",
+        "core.teams.manage",
+        "core.tenant.settings",
+        "core.audit.read",
+        "core.connectors.manage",
+    }
 )
 
 ROLE_PERMISSIONS: dict[str, frozenset[str]] = {

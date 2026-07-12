@@ -36,12 +36,23 @@ celery_app.conf.update(
             "task": "core.gdpr.purge_expired_exports",
             "schedule": 3600.0,
         },
+        # Refresh proactif des tokens de connecteurs (Phase 5 T6, décision D5).
+        "connectors-refresh-tokens": {
+            "task": "connectors.refresh_expiring_tokens",
+            "schedule": 300.0,
+        },
+        # Renouvellement des subscriptions webhook providers (Phase 5 T8).
+        "connectors-renew-subscriptions": {
+            "task": "connectors.renew_subscriptions",
+            "schedule": 3600.0,
+        },
     },
 )
 
 # Les tâches déclarées par module (@shared_task) se rattachent à l'app par import.
 import app.admin.tasks  # noqa: E402  # pyright: ignore[reportUnusedImport]
 import app.auth.tasks  # noqa: E402  # pyright: ignore[reportUnusedImport]
+import app.connectors.tasks  # noqa: E402  # pyright: ignore[reportUnusedImport]
 import app.gdpr.tasks  # noqa: E402, F401  # pyright: ignore[reportUnusedImport]
 
 

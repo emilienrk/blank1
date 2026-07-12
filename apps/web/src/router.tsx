@@ -11,6 +11,7 @@ import { meQueryOptions } from "@/lib/auth";
 import { AcceptInvitationPage } from "@/pages/accept-invitation";
 import { AccountSecurityPage } from "@/pages/account-security";
 import { AuditPage } from "@/pages/audit";
+import { ConnectorsPage } from "@/pages/connectors";
 import { HomePage } from "@/pages/home";
 import { LoginPage } from "@/pages/login";
 import { MembersPage } from "@/pages/members";
@@ -86,6 +87,12 @@ const auditRoute = createRoute({
   component: AuditPage,
 });
 
+const connectorsRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: "/connectors",
+  component: ConnectorsPage,
+});
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
   acceptInvitationRoute,
@@ -95,6 +102,7 @@ const routeTree = rootRoute.addChildren([
     teamsRoute,
     accountSecurityRoute,
     auditRoute,
+    connectorsRoute,
   ]),
 ]);
 

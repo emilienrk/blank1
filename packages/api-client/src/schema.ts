@@ -366,6 +366,104 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/connectors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Connectors List */
+        get: operations["listConnectors"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/connectors/{connection_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Connector Revoke
+         * @description Révocation : best-effort chez le provider, suppression locale garantie (D9).
+         */
+        delete: operations["revokeConnector"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/connectors/{connection_id}/reconsent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Connector Reconsent
+         * @description Relance un flux OAuth sur une connexion `needs_reconsent` (§5 : guidé).
+         */
+        post: operations["reconsentConnector"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/connectors/{provider}/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Connector Oauth Callback
+         * @description Route ANONYME sur l'apex (liste fermée, invariant n°9) : le state signé
+         *     est la seule autorité — il repose le contexte tenant.
+         */
+        get: operations["connectorOauthCallback"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/connectors/{provider}/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Connector Start
+         * @description Démarre le flux OAuth tiers : la SPA redirige vers l'URL retournée.
+         */
+        get: operations["startConnector"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/directory/invitations": {
         parameters: {
             query?: never;
@@ -526,6 +624,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/webhooks/{provider}/{route_key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Receive Webhook
+         * @description Traitement minimal : validation d'origine, accusé immédiat, tâche Celery.
+         */
+        post: operations["connectorWebhook"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -581,11 +699,60 @@ export interface components {
             /** Next Cursor */
             next_cursor: string | null;
         };
+        /** AuthorizationUrlResponse */
+        AuthorizationUrlResponse: {
+            /** Authorization Url */
+            authorization_url: string;
+        };
         /** ChangeRoleRequest */
         ChangeRoleRequest: {
             /** Role */
             role: string;
         };
+        /**
+         * ConnectionKind
+         * @enum {string}
+         */
+        ConnectionKind: "tenant" | "user";
+        /** ConnectionOut */
+        ConnectionOut: {
+            /**
+             * Access Token Expires At
+             * Format: date-time
+             */
+            access_token_expires_at: string;
+            /** Account Label */
+            account_label: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Health Checked At */
+            health_checked_at: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            kind: components["schemas"]["ConnectionKind"];
+            /** Last Error */
+            last_error: string | null;
+            provider: components["schemas"]["ConnectorProvider"];
+            /** Scopes */
+            scopes: string[];
+            status: components["schemas"]["ConnectionStatus"];
+        };
+        /**
+         * ConnectionStatus
+         * @enum {string}
+         */
+        ConnectionStatus: "active" | "needs_reconsent" | "revoked" | "error";
+        /**
+         * ConnectorProvider
+         * @enum {string}
+         */
+        ConnectorProvider: "google" | "microsoft";
         /** CreateInvitationRequest */
         CreateInvitationRequest: {
             /**
@@ -1537,6 +1704,157 @@ export interface operations {
             };
         };
     };
+    listConnectors: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectionOut"][];
+                };
+            };
+        };
+    };
+    revokeConnector: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatusResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reconsentConnector: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthorizationUrlResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    connectorOauthCallback: {
+        parameters: {
+            query: {
+                state: string;
+                code?: string | null;
+                error?: string | null;
+            };
+            header?: never;
+            path: {
+                provider: components["schemas"]["ConnectorProvider"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    startConnector: {
+        parameters: {
+            query?: {
+                capabilities?: string[] | null;
+                kind?: components["schemas"]["ConnectionKind"];
+            };
+            header?: never;
+            path: {
+                provider: components["schemas"]["ConnectorProvider"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthorizationUrlResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     listInvitations: {
         parameters: {
             query?: never;
@@ -1905,6 +2223,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+        };
+    };
+    connectorWebhook: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: components["schemas"]["ConnectorProvider"];
+                route_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

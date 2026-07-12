@@ -4,7 +4,8 @@ Socle commun réutilisable (auth multi-tenant, connecteurs externes, couche IA
 multi-fournisseurs, logs, RGPD) pour des modules d'automatisation métier.
 Plans : [architecture globale](docs/architecture-plan.md) ·
 [Phase 3 — Frontends + back-office](docs/phase-3-frontends-backoffice-plan.md) ·
-[Phase 4 — Audit + socle RGPD](docs/phase-4-audit-rgpd-plan.md).
+[Phase 4 — Audit + socle RGPD](docs/phase-4-audit-rgpd-plan.md) ·
+[Phase 5 — Connecteurs Google/Microsoft](docs/phase-5-connecteurs-plan.md).
 
 ## Stack
 
@@ -172,6 +173,50 @@ opérateur complète (dont la purge manuelle des backups pgBackRest, assumée ju
 Phase 8) : [`docs/runbook-gdpr.md`](docs/runbook-gdpr.md). Trames RGPD non techniques
 (registre des traitements, sous-traitants, notification de violation) :
 [`docs/rgpd/`](docs/rgpd/).
+
+## Connecteurs externes (Phase 5)
+
+Framework de connexion aux comptes Google Workspace et Microsoft 365, exposant des
+**capabilities normalisées** (`Mail`, `Calendar`) que les modules consomment sans jamais
+toucher les APIs propriétaires (§5 du plan global). Deux providers très différents —
+Gmail/Calendar via `google-api-python-client`, Microsoft Graph via `httpx` — derrière le
+même contrat (`app/connectors/capabilities.py`).
+
+**Cycle de vie d'une connexion** (SPA client, page « Connecteurs », `core.connectors.*`) :
+un `owner`/`admin` lance « Connecter Google/Microsoft » → flux OAuth tiers (distinct du
+login) → la connexion apparaît `active`. Les tokens sont **chiffrés au repos**
+(`KeyProvider` AES-256-GCM) en **DB tenant** — jamais en clair nulle part (base, logs,
+réponse API) ; l'export/effacement RGPD (Phase 4) les couvre gratuitement. Le refresh
+proactif (beat 5 min, verrou Valkey par connexion) renouvelle les access tokens avant
+expiration ; une révocation côté provider bascule la connexion en `needs_reconsent` et
+la SPA propose le re-consentement guidé. Tout le cycle est audité (`connector.*`).
+
+**Webhooks entrants** : subscriptions Microsoft Graph (~3 j, renouvelées) et channels
+Google Calendar (~7 j, recréés) ; chaque notification est authentifiée (echo
+`validationToken` + `clientState` haché chez Microsoft, en-têtes de channel chez Google)
+avant tout traitement, puis normalisée et livrée à un registre interne
+(`on_connector_event`) — premier client réel en Phase 7. Le endpoint
+`POST /api/v1/webhooks/{provider}/{route_key}` est **la première surface entrante depuis
+Internet** (jusqu'ici seul le navigateur entrait) : il doit être joignable en HTTPS
+public (vérifier Caddy). Gmail ne pousse que via Cloud Pub/Sub : sa capability mail reste
+sans webhook dans cette phase (delta/historyId laissés aux consommateurs, Phase 7).
+
+**Création des apps OAuth connecteurs** (distinctes des apps de login, décision D3 —
+les scopes sensibles ne doivent pas mêler les deux cycles de vie) :
+
+- **Google Cloud Console** : app OAuth « connecteurs », redirect URI
+  `<PUBLIC_BASE_URL>/api/v1/connectors/google/callback`, scopes `openid email`,
+  `gmail.readonly`, `gmail.send`, `calendar`. La vérification Google (scopes sensibles,
+  lancée en Phase 3 T9) plafonne l'app à 100 utilisateurs de test tant qu'elle n'est pas
+  validée — suffisant pour la démo, bloquant pour de vrais clients.
+- **Azure AD (Entra ID)** : app « connecteurs », redirect URI
+  `<PUBLIC_BASE_URL>/api/v1/connectors/microsoft/callback`, permissions déléguées
+  `Mail.Read`, `Mail.Send`, `Calendars.ReadWrite`, `offline_access`.
+
+Variables d'environnement (voir `.env.example`) : `GOOGLE_CONNECTOR_CLIENT_ID/SECRET`,
+`MICROSOFT_CONNECTOR_CLIENT_ID/SECRET`, `CONNECTOR_REFRESH_LEAD_MINUTES` (déf. 10),
+`CONNECTOR_WEBHOOK_BASE_URL` (déf. = `PUBLIC_BASE_URL` ; à surcharger si les webhooks
+entrent par un autre nom d'hôte que l'apex public).
 
 ## Déploiement staging (modèle pull)
 
