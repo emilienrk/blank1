@@ -4,6 +4,92 @@
  */
 
 export interface paths {
+    "/api/v1/admin/migrations/last-report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Migrations Last Report */
+        get: operations["adminGetLastMigrationReport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/migrations/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Migrations Run */
+        post: operations["adminRunMigrations"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/tenants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Tenants List */
+        get: operations["adminListTenants"];
+        put?: never;
+        /** Tenants Create */
+        post: operations["adminCreateTenant"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/tenants/{slug}/retry-provision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Tenants Retry Provision */
+        post: operations["adminRetryProvisionTenant"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/{email}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Users Lookup */
+        get: operations["adminLookupUser"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/invitations/accept": {
         parameters: {
             query?: never;
@@ -181,7 +267,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** Invitations List */
+        get: operations["listInvitations"];
         put?: never;
         /** Invitation Create */
         post: operations["createInvitation"];
@@ -285,7 +372,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** Team Members List */
+        get: operations["listTeamMembers"];
         put?: never;
         /** Team Member Add */
         post: operations["addTeamMember"];
@@ -374,6 +462,21 @@ export interface components {
             description?: string | null;
             /** Name */
             name: string;
+        };
+        /** CreateTenantRequest */
+        CreateTenantRequest: {
+            /** Name */
+            name?: string | null;
+            /** Owner Email */
+            owner_email?: string | null;
+            /** Slug */
+            slug: string;
+        };
+        /** CreateTenantResponse */
+        CreateTenantResponse: {
+            /** Owner Invitation Accept Url */
+            owner_invitation_accept_url?: string | null;
+            tenant: components["schemas"]["TenantSummaryOut"];
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -466,11 +569,73 @@ export interface components {
             /** Tenant Slug */
             tenant_slug: string;
         };
+        /** MembershipSummaryOut */
+        MembershipSummaryOut: {
+            /** Role */
+            role: string;
+            /** Tenant Slug */
+            tenant_slug: string;
+        };
+        /** MigrationOutcomeDict */
+        MigrationOutcomeDict: {
+            /** Database */
+            database: string;
+            /** Error */
+            error: string | null;
+            /** Ok */
+            ok: boolean;
+            /** Revision */
+            revision: string | null;
+            /** Target */
+            target: string;
+        };
+        /** MigrationReportOut */
+        MigrationReportOut: {
+            /** Error */
+            error: string | null;
+            /** Finished At */
+            finished_at: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Outcomes */
+            outcomes: components["schemas"]["MigrationOutcomeDict"][];
+            /** Started At */
+            started_at: string;
+            /** Status */
+            status: string;
+            /** Summary */
+            summary: string | null;
+        };
         /**
          * OAuthProvider
          * @enum {string}
          */
         OAuthProvider: "google" | "microsoft";
+        /** PendingInvitationOut */
+        PendingInvitationOut: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Email */
+            email: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Role */
+            role: string;
+        };
         /** StatusResponse */
         StatusResponse: {
             /**
@@ -491,6 +656,26 @@ export interface components {
             id: string;
             /** Name */
             name: string;
+        };
+        /** TenantSummaryOut */
+        TenantSummaryOut: {
+            /** Db Name */
+            db_name: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Plan */
+            plan: string;
+            /** Schema Revision */
+            schema_revision: string | null;
+            /** Slug */
+            slug: string;
+            /** State */
+            state: string;
         };
         /** TotpActivateRequest */
         TotpActivateRequest: {
@@ -521,6 +706,22 @@ export interface components {
             /** Secret */
             secret: string;
         };
+        /** UserLookupOut */
+        UserLookupOut: {
+            /** Display Name */
+            display_name: string | null;
+            /** Email */
+            email: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Is Platform Admin */
+            is_platform_admin: boolean;
+            /** Memberships */
+            memberships: components["schemas"]["MembershipSummaryOut"][];
+        };
         /** ValidationError */
         ValidationError: {
             /** Context */
@@ -543,6 +744,161 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    adminGetLastMigrationReport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MigrationReportOut"] | null;
+                };
+            };
+        };
+    };
+    adminRunMigrations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MigrationReportOut"];
+                };
+            };
+        };
+    };
+    adminListTenants: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantSummaryOut"][];
+                };
+            };
+        };
+    };
+    adminCreateTenant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTenantRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateTenantResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    adminRetryProvisionTenant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantSummaryOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    adminLookupUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                email: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserLookupOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     acceptInvitation: {
         parameters: {
             query?: never;
@@ -833,6 +1189,26 @@ export interface operations {
             };
         };
     };
+    listInvitations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PendingInvitationOut"][];
+                };
+            };
+        };
+    };
     createInvitation: {
         parameters: {
             query?: never;
@@ -1054,6 +1430,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StatusResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    listTeamMembers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                team_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberOut"][];
                 };
             };
             /** @description Validation Error */

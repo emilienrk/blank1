@@ -20,7 +20,7 @@ from app.auth.permissions import require_permission
 from app.core.db import get_control_session
 from app.core.mailer import get_mailer
 from app.directory import service
-from app.directory.models import User
+from app.directory.models import Membership, User
 from app.directory.tenant_models import Team, TeamMember
 from app.tenancy.context import TenantContext
 from app.tenancy.session import get_tenant_session
@@ -114,6 +114,32 @@ class InvitationOut(BaseModel):
     # L'URL d'acceptation est TOUJOURS retournée à l'appelant autorisé (décision D8) ;
     # l'envoi d'email est optionnel (SMTP configuré ou non).
     accept_url: str
+
+
+class PendingInvitationOut(BaseModel):
+    id: uuid.UUID
+    email: str
+    role: str
+    expires_at: datetime
+    created_at: datetime
+
+
+@router.get("/invitations", operation_id="listInvitations")
+async def invitations_list(
+    ctx: Annotated[TenantContext, Depends(require_permission("core.members.read"))],
+    session: ControlSession,
+) -> list[PendingInvitationOut]:
+    invitations = await service.list_pending_invitations(session, ctx.tenant_id)
+    return [
+        PendingInvitationOut(
+            id=invitation.id,
+            email=invitation.email,
+            role=invitation.role,
+            expires_at=invitation.expires_at,
+            created_at=invitation.created_at,
+        )
+        for invitation in invitations
+    ]
 
 
 @router.post("/invitations", operation_id="createInvitation", status_code=201)
@@ -214,6 +240,32 @@ async def team_delete(
     await session.delete(team)
     await session.commit()
     return StatusResponse()
+
+
+@router.get("/teams/{team_id}/members", operation_id="listTeamMembers")
+async def team_members_list(
+    team_id: uuid.UUID,
+    ctx: Annotated[TenantContext, Depends(require_permission("core.teams.read"))],
+    control_session: ControlSession,
+    session: TenantSession,
+) -> list[MemberOut]:
+    team = await session.get(Team, team_id)
+    if team is None:
+        raise HTTPException(status_code=404, detail="Équipe introuvable")
+    team_members = await session.scalars(select(TeamMember).where(TeamMember.team_id == team_id))
+    user_ids = [team_member.user_id for team_member in team_members]
+    if not user_ids:
+        return []
+    # Cohérence inter-bases (pas de FK possible) : les emails/rôles viennent du control-plane.
+    rows = await control_session.execute(
+        select(User, Membership.role)
+        .join(Membership, Membership.user_id == User.id)
+        .where(User.id.in_(user_ids), Membership.tenant_id == ctx.tenant_id)
+    )
+    return [
+        MemberOut(user_id=user.id, email=user.email, display_name=user.display_name, role=role)
+        for user, role in rows.all()
+    ]
 
 
 class AddTeamMemberRequest(BaseModel):

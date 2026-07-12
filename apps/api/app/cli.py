@@ -10,6 +10,7 @@ from typing import Annotated
 
 import typer
 
+from app.auth.service import get_user_by_email
 from app.core.config import get_settings
 from app.core.db import dispose_control_engine
 from app.core.logging import configure_logging
@@ -46,9 +47,11 @@ app = typer.Typer(no_args_is_help=True, help="Administration du socle SaaS multi
 tenant_app = typer.Typer(no_args_is_help=True, help="Gestion des tenants.")
 db_app = typer.Typer(no_args_is_help=True, help="Migrations de schéma (control-plane + tenants).")
 invitation_app = typer.Typer(no_args_is_help=True, help="Invitations d'utilisateurs.")
+admin_app = typer.Typer(no_args_is_help=True, help="Rôle plateforme (platform_admin).")
 app.add_typer(tenant_app, name="tenant")
 app.add_typer(db_app, name="db")
 app.add_typer(invitation_app, name="invitation")
+app.add_typer(admin_app, name="admin")
 
 
 async def _invite(slug: str, email: str, role: str) -> str:
@@ -180,6 +183,44 @@ def db_upgrade(
     _print_report(report)
     if report.has_failures:
         raise typer.Exit(code=1)
+
+
+async def _set_platform_admin(email: str, value: bool) -> None:
+    from app.core.db import get_control_sessionmaker
+
+    async with get_control_sessionmaker()() as session:
+        user = await get_user_by_email(session, email)
+        if user is None:
+            msg = f"Utilisateur {email!r} inconnu — le compte doit déjà exister."
+            raise DirectoryError(msg)
+        user.is_platform_admin = value
+        await session.commit()
+
+
+@admin_app.command("grant")
+def admin_grant(
+    email: Annotated[str, typer.Argument(help="Email d'un utilisateur existant.")],
+) -> None:
+    """Pose is_platform_admin=true — SEUL moyen de le faire (décision D5, jamais via l'API)."""
+    try:
+        run_async(_set_platform_admin(email, True))
+    except DirectoryError as exc:
+        typer.echo(f"ERREUR : {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(f"{email} est désormais platform_admin.")
+
+
+@admin_app.command("revoke")
+def admin_revoke(
+    email: Annotated[str, typer.Argument(help="Email d'un utilisateur existant.")],
+) -> None:
+    """Retire is_platform_admin."""
+    try:
+        run_async(_set_platform_admin(email, False))
+    except DirectoryError as exc:
+        typer.echo(f"ERREUR : {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(f"{email} n'est plus platform_admin.")
 
 
 def main() -> None:

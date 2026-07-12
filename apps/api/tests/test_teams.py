@@ -45,6 +45,11 @@ async def test_teams_crud_through_tenant_db(db_env: Settings) -> None:
             json={"user_id": str(member.id)},
         )
         assert added.status_code == 201
+
+        composition = client.get(f"/api/v1/directory/teams/{team_id}/members", headers=host)
+        assert composition.status_code == 200
+        assert [row["email"] for row in composition.json()] == ["bob@example.com"]
+
         rejected = client.post(
             f"/api/v1/directory/teams/{team_id}/members",
             headers=host,
@@ -71,6 +76,7 @@ async def test_teams_crud_through_tenant_db(db_env: Settings) -> None:
             f"/api/v1/directory/teams/{team_id}/members/{member.id}", headers=host
         )
         assert removed.status_code == 200
+        assert client.get(f"/api/v1/directory/teams/{team_id}/members", headers=host).json() == []
         deleted = client.delete(f"/api/v1/directory/teams/{team_id}", headers=host)
         assert deleted.status_code == 200
         assert client.get("/api/v1/directory/teams", headers=host).json() == []

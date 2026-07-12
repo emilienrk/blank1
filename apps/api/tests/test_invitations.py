@@ -181,6 +181,39 @@ async def test_duplicate_pending_invitation_rejected_and_revocable(db_env: Setti
         assert again.status_code == 201
 
 
+async def test_list_pending_invitations(db_env: Settings) -> None:
+    tenant = await add_catalog_tenant("acme")
+    admin = await create_user("admin@example.com")
+    await add_membership(admin.id, tenant.id, "admin")
+    admin_token = await create_session_token(admin.id)
+    await reset_db_engines()
+
+    host = {"host": "acme.app.example.fr"}
+    with TestClient(create_app()) as client:
+        client.cookies.set(db_env.session_cookie_name, admin_token)
+        created = client.post(
+            "/api/v1/directory/invitations",
+            headers=host,
+            json={"email": "bob@example.com", "role": "member"},
+        )
+        assert created.status_code == 201
+        invitation_id = created.json()["id"]
+
+        listed = client.get("/api/v1/directory/invitations", headers=host)
+        assert listed.status_code == 200
+        rows = listed.json()
+        assert len(rows) == 1
+        assert rows[0]["id"] == invitation_id
+        assert rows[0]["email"] == "bob@example.com"
+        # Le token n'apparaît jamais dans le listing (invariant n°5).
+        assert "accept_url" not in rows[0]
+        assert "token" not in rows[0]
+
+        client.delete(f"/api/v1/directory/invitations/{invitation_id}", headers=host)
+        listed_after = client.get("/api/v1/directory/invitations", headers=host)
+        assert listed_after.json() == []
+
+
 async def test_inviting_existing_member_rejected(db_env: Settings) -> None:
     tenant = await add_catalog_tenant("acme")
     admin = await create_user("admin@example.com")
