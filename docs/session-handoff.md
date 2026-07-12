@@ -19,7 +19,13 @@ Documents de référence, à lire dans cet ordre :
    **Plan validé par l'utilisateur et implémenté (PR en cours de revue).**
 3. `docs/phase-1-socle-multi-tenant-plan.md` et `docs/phase-0-fondations-plan.md` —
    plans des phases précédentes (implémentées, fusionnées).
-4. `CLAUDE.md` (racine) et `apps/api/CLAUDE.md` — conventions et invariants opérationnels.
+4. `docs/phase-3-frontends-backoffice-plan.md` … `docs/phase-8-durcissement-plan.md` —
+   plans détaillés des phases à venir (rédigés en avance, session « plans phases
+   3-8 » du 2026-07-11). **À re-valider avec l'utilisateur au démarrage de chaque
+   phase** : l'« état des lieux » de chaque plan est une hypothèse à confronter au
+   réel, et les décisions D restent des recommandations tant que la phase n'a pas
+   démarré.
+5. `CLAUDE.md` (racine) et `apps/api/CLAUDE.md` — conventions et invariants opérationnels.
 
 ## État actuel
 
@@ -134,8 +140,11 @@ et le README.
    créées et `AUTH_MASTER_KEY`/`SESSION_COOKIE_DOMAIN`/`PUBLIC_BASE_URL` configurés).
 2. Ensuite : **Phase 3 — Frontends + back-office** (SPA login/gestion d'équipe,
    back-office provisioning/supervision, lancer les vérifications d'apps OAuth pour
-   les scopes connecteurs). Même méthode : plan détaillé d'abord
-   (`docs/phase-3-...-plan.md`), validation utilisateur, puis implémentation.
+   les scopes connecteurs). Le plan détaillé existe déjà
+   (`docs/phase-3-frontends-backoffice-plan.md`) — le faire valider par
+   l'utilisateur (et vérifier son « état des lieux »), puis implémenter. Les plans
+   des phases 4 à 8 sont également rédigés (voir la liste des documents de
+   référence ci-dessus), même méthode à chaque phase.
 3. Toujours en attente côté staging : dérouler le critère de démo Phase 1 (section E du
    plan Phase 1) dès que la machine existe.
 
