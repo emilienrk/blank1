@@ -16,7 +16,10 @@ export default defineConfig({
     port: 5173,
     proxy: {
       // En dev local, l'API tourne via `make api` ; en staging c'est Caddy qui route /api.
-      "/api": "http://localhost:8000",
+      // `changeOrigin: false` : le header Host d'origine (sous-domaine tenant) doit
+      // atteindre l'API tel quel — Caddy fait de même en staging/prod (reverse_proxy
+      // sans réécriture) ; sinon le contrôle CSRF Origin-vs-Host (Phase 2) rejette tout.
+      "/api": { target: "http://localhost:8000", changeOrigin: false },
     },
   },
   test: {
