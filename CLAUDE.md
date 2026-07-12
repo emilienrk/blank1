@@ -1,6 +1,6 @@
 # Socle SaaS B2B multi-tenant — conventions du monorepo
 
-Plans de référence : `docs/architecture-plan.md` (global) et `docs/phase-4-audit-rgpd-plan.md` (phase courante — plan validé, implémenté).
+Plans de référence : `docs/architecture-plan.md` (global) et `docs/phase-5-connecteurs-plan.md` (phase courante — plan validé, implémenté).
 
 ## Carte du repo
 
@@ -56,6 +56,17 @@ Tout passe par le `Makefile` : `make install`, `make dev`, `make lint`, `make ty
     `retry-provision` de la Phase 1, qui ne droppe que des bases jamais devenues
     `active`). Les exports RGPD sont chiffrés au repos, à durée de vie bornée, et ne
     sont jamais servis par la surface publique.
+13. **Aucun token de connecteur en clair, nulle part** (Phase 5) : chiffré `KeyProvider`
+    en **DB tenant** (`app.connectors.tenant_models`), jamais en control-plane (qui ne
+    porte que le routage `webhook_routes`), jamais dans les logs (même tronqué), jamais
+    dans une réponse API (la SPA ne voit que statuts et labels). Le reste du code ne
+    consomme QUE les capabilities (`app.connectors.capabilities`) — tout accès direct aux
+    APIs Google/Graph hors `app/connectors/providers/` est une violation. Tout appel
+    provider passe par l'enveloppe throttle/backoff (`app.connectors.throttle`), aucun
+    appel lourd dans le cycle requête/réponse HTTP. Cycle de vie audité (`connector.*`).
+    Deux nouvelles routes anonymes (liste fermée, invariant n°9) :
+    `connectors/{provider}/callback` (OAuth tiers) et `webhooks/{provider}/{route_key}`
+    (notifications providers, authentifiées avant tout traitement).
 
 ## Conventions
 

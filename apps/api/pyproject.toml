@@ -19,6 +19,9 @@ dependencies = [
     "cryptography>=43.0",
     "email-validator>=2.2",
     "httpx>=0.27",
+    "google-api-python-client>=2.150",
+    "google-auth>=2.35",
+    "anyio>=4.4",
 ]
 
 [dependency-groups]

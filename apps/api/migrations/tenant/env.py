@@ -6,12 +6,18 @@ from alembic import context
 from sqlalchemy import Connection, pool
 from sqlalchemy.ext.asyncio import create_async_engine
 
+import app.audit.tenant_models
+import app.connectors.tenant_models
 import app.directory.tenant_models
 from app.tenancy.tenant_base import TenantBase
 
 config = context.config
 # Référencer les modules de modèles les enregistre dans la MetaData (autogenerate).
-_MODEL_MODULES = (app.directory.tenant_models,)
+_MODEL_MODULES = (
+    app.directory.tenant_models,
+    app.audit.tenant_models,
+    app.connectors.tenant_models,
+)
 target_metadata = TenantBase.metadata
 
 

@@ -15,8 +15,9 @@ app/directory/ # identités globales, memberships, invitations, annuaire, équip
 app/admin/     # API back-office (hors contexte tenant) : tenants, migrations, lookup users
 app/audit/     # journal d'audit applicatif (DB tenant, append-only)
 app/gdpr/      # export, effacement (délai de grâce), rétention/purge
+app/connectors/ # connexions OAuth tierces (Google/Microsoft), capabilities Mail/Calendar,
+#                refresh proactif, webhooks entrants, throttle (Phase 5)
 app/cli.py     # CLI `saas` (tenant/invitation/db/export/delete + admin grant/revoke)
-# Phase 5+ : app/connectors/, ...
 ```
 
 Chaque module expose au besoin : `router.py` (routes FastAPI), `service.py` (logique),
@@ -102,6 +103,44 @@ Chaque module expose au besoin : `router.py` (routes FastAPI), `service.py` (log
 - **Les tâches beat qui itèrent les tenants posent le contexte explicitement**
   (`app.tenancy.context.tenant_context` + `TenantEngineManager.session`) — voir
   `app.gdpr.tasks` pour le pattern (rétention, effacements arrivés à échéance).
+
+## Connecteurs — règles non négociables (Phase 5)
+
+- **Aucun token de connecteur en clair, nulle part** : chiffré `KeyProvider`
+  (`app.core.crypto`) en **DB tenant** (`app.connectors.tenant_models`), via
+  `app.connectors.service.encrypt_token`/`decrypt_token` uniquement. Le control-plane ne
+  porte que le routage (`webhook_routes`, aucune donnée métier ni token, décision D6).
+  Jamais dans les logs ni dans une réponse API (`ConnectionOut` = statuts et labels).
+- **Le reste du code ne consomme QUE les capabilities** (`app.connectors.capabilities` :
+  `get_capability(session, connection, MailCapability)`), jamais les APIs Google/Graph
+  directement. Toute implémentation propriétaire vit sous `app/connectors/providers/` et
+  nulle part ailleurs. Les modèles normalisés (`EmailMessage`, `CalendarEvent`) ne portent
+  que les champs communs + `provider_raw_id`.
+- **Tout appel provider passe par l'enveloppe throttle/backoff**
+  (`app.connectors.throttle.run_with_backoff` + `client_base`) : compteur Valkey par
+  (provider, connexion), respect de `Retry-After`, `ProviderUnavailable` au plafond. Les
+  SDK synchrones (`google-api-python-client`) s'exécutent via `anyio.to_thread`
+  (`client_base.run_sync_call`), jamais dans l'event loop. Aucun appel lourd (listing
+  volumineux) dans une requête HTTP — Celery.
+- **Refresh des tokens sérialisé par verrou Valkey par connexion** (décision D5,
+  `throttle.acquire_lock`/`wait_for_lock`) : le refresh périodique (beat 5 min) et le
+  refresh à la volée (`client_base.fresh_access_token`) ne se marchent jamais dessus.
+  `invalid_grant` → `needs_reconsent` + audit, jamais une exception qui casse le beat.
+- **Toute réception webhook est authentifiée avant toute action** (echo `validationToken`
+  + `clientState` haché chez Microsoft, en-têtes de channel chez Google) ; un webhook
+  invalide répond 2xx neutre sans traitement ni log verbeux (pas d'oracle). Le
+  `client_state` est stocké haché (`hash_token`), comme tout token du socle.
+- **Cycle de vie audité** (`connector.connected`, `connector.reconsent_required`,
+  `connector.revoked`, `connector.subscription_renewal_failed`, `connector.event_received`)
+  via `record_audit_event` (règle Phase 4 appliquée aux connecteurs).
+- **Écart au plan (D2) assumé** : le plan prévoyait `msal` pour l'acquisition des tokens
+  Microsoft. À l'implémentation, l'échange/refresh OAuth des DEUX providers passe
+  finalement par `httpx` contre les endpoints du manifest (`app.connectors.service`) —
+  même mécanique que l'OIDC manuel de la Phase 2, testable avec un faux provider local.
+  Le cache de tokens en mémoire de `msal` entrerait en conflit avec notre store chiffré en
+  DB et le verrou de refresh par connexion. `msal` n'est donc PAS une dépendance du projet.
+  Les appels Graph métier restent en `httpx` REST direct (pas de `msgraph-sdk`), conformes
+  au plan.
 
 ## Règles
 
