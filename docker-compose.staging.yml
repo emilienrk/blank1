@@ -1,9 +1,10 @@
 # Override staging :
 #   docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d
 # Le .env staging définit : APP_ENV=staging, SITE_ADDRESS=staging.<domaine>,
-# API_IMAGE/WEB_IMAGE (tags GHCR), POSTGRES_PASSWORD, GRAFANA_ADMIN_PASSWORD.
-# Les surfaces admin (Grafana :3000, Uptime Kuma :3001) restent liées à 127.0.0.1
-# — accès uniquement via WireGuard/tunnel SSH (invariant I6).
+# API_IMAGE/WEB_IMAGE/ADMIN_IMAGE (tags GHCR), POSTGRES_PASSWORD, GRAFANA_ADMIN_PASSWORD,
+# ADMIN_SITE_ADDRESS (back-office, ex. admin.staging.<domaine> — jamais l'apex public).
+# Les surfaces admin (back-office :8081, Grafana :3000, Uptime Kuma :3001) restent liées
+# à 127.0.0.1 — accès uniquement via WireGuard/tunnel SSH (invariant I6/I7).
 
 services:
   postgres:
@@ -26,6 +27,10 @@ services:
     ports:
       - "80:80"
       - "443:443"
+
+  admin:
+    restart: unless-stopped
+    pull_policy: always
 
   loki:
     restart: unless-stopped

@@ -103,6 +103,17 @@ async def create_invitation(
     return invitation, token
 
 
+async def list_pending_invitations(session: AsyncSession, tenant_id: uuid.UUID) -> list[Invitation]:
+    """Invitations non acceptées (y compris expirées, pour nettoyage) — jamais le
+    token en clair : `accept_url_for` n'apparaît qu'à la création (invariant n°5)."""
+    rows = await session.scalars(
+        select(Invitation)
+        .where(Invitation.tenant_id == tenant_id, Invitation.accepted_at.is_(None))
+        .order_by(Invitation.created_at.desc())
+    )
+    return list(rows.all())
+
+
 async def revoke_invitation(
     session: AsyncSession, tenant_id: uuid.UUID, invitation_id: uuid.UUID
 ) -> None:

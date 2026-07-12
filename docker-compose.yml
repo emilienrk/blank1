@@ -75,6 +75,24 @@ services:
     depends_on:
       - api
 
+  # Back-office (Phase 3) : statiques + Caddy, comme `caddy` ci-dessus — aucune nouvelle
+  # image de SERVICE api/worker (invariant n°2 intact). Jamais exposé publiquement
+  # (invariant n°7) : port lié à 127.0.0.1 uniquement, comme Grafana/Uptime Kuma.
+  admin:
+    build:
+      context: .
+      dockerfile: apps/admin/Dockerfile
+    image: ${ADMIN_IMAGE:-saas-admin:local}
+    environment:
+      ADMIN_SITE_ADDRESS: ${ADMIN_SITE_ADDRESS:-http://localhost:8081}
+    ports:
+      - "127.0.0.1:8081:8081"
+    volumes:
+      - admin_caddy_data:/data
+      - admin_caddy_config:/config
+    depends_on:
+      - api
+
   # --- Observabilité allégée (plan global §7) ---
 
   loki:
@@ -125,6 +143,8 @@ volumes:
   valkey_data:
   caddy_data:
   caddy_config:
+  admin_caddy_data:
+  admin_caddy_config:
   loki_data:
   alloy_data:
   grafana_data:

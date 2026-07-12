@@ -5,7 +5,8 @@
 #
 # Prérequis (une seule fois, voir README) :
 #   - repo cloné dans REPO_DIR, `docker login ghcr.io` fait avec un PAT packages:read
-#   - ENV_FILE avec APP_ENV=staging, SITE_ADDRESS, API_IMAGE/WEB_IMAGE (tags :latest GHCR)
+#   - ENV_FILE avec APP_ENV=staging, SITE_ADDRESS, ADMIN_SITE_ADDRESS,
+#     API_IMAGE/WEB_IMAGE/ADMIN_IMAGE (tags :latest GHCR)
 #
 # Variables surchargables : REPO_DIR (défaut /srv/saas/app), ENV_FILE (défaut /srv/saas/.env)
 set -euo pipefail
@@ -42,6 +43,7 @@ image_var() {
 
 API_IMAGE=$(image_var API_IMAGE)
 WEB_IMAGE=$(image_var WEB_IMAGE)
+ADMIN_IMAGE=$(image_var ADMIN_IMAGE)
 
 running_image_id() {
     local container_id
@@ -60,7 +62,7 @@ pulled_image_id() {
 compose pull --quiet
 
 CHANGED=0
-for pair in "api:${API_IMAGE}" "caddy:${WEB_IMAGE}"; do
+for pair in "api:${API_IMAGE}" "caddy:${WEB_IMAGE}" "admin:${ADMIN_IMAGE}"; do
     service="${pair%%:*}"
     image="${pair#*:}"
     if [ "$(running_image_id "$service")" != "$(pulled_image_id "$image")" ]; then

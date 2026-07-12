@@ -3,12 +3,12 @@
 Socle commun réutilisable (auth multi-tenant, connecteurs externes, couche IA
 multi-fournisseurs, logs, RGPD) pour des modules d'automatisation métier.
 Plans : [architecture globale](docs/architecture-plan.md) ·
-[Phase 0 — Fondations](docs/phase-0-fondations-plan.md).
+[Phase 3 — Frontends + back-office](docs/phase-3-frontends-backoffice-plan.md).
 
 ## Stack
 
 Python 3.12 · FastAPI · Celery (broker Valkey) · PostgreSQL 17 ·
-React/Vite/TypeScript · TanStack Router/Query · Tailwind ·
+React/Vite/TypeScript · TanStack Router/Query · Tailwind · react-hook-form + zod ·
 Docker Compose · Caddy · Loki + Grafana + Alloy · Uptime Kuma.
 
 ## Démarrage local
@@ -19,13 +19,15 @@ Prérequis : [uv](https://docs.astral.sh/uv/), Node 22 (`corepack enable`), Dock
 cp .env.example .env
 make install     # dépendances Python (uv) + Node (pnpm)
 make dev         # infra Docker (Postgres, Valkey, Loki, Grafana, Alloy, Uptime Kuma)
-# puis, dans deux terminaux :
+# puis, dans des terminaux séparés :
 make api         # API sur http://localhost:8000 (docs : /api/v1/docs)
-make web         # SPA sur http://localhost:5173 (proxy /api -> :8000)
+make worker      # worker Celery (requis pour les migrations déclenchées depuis le back-office)
+make web         # SPA client sur http://localhost:5173 (proxy /api -> :8000)
+make admin       # SPA back-office sur http://localhost:5174 (jamais exposée publiquement)
 ```
 
-Environnement complet conteneurisé (SPA servie par Caddy sur http://localhost:8080) :
-`docker compose up -d --build`.
+Environnement complet conteneurisé (SPA client servie par Caddy sur http://localhost:8080,
+back-office sur http://localhost:8081) : `docker compose up -d --build`.
 
 ## Commandes
 
@@ -43,10 +45,11 @@ Environnement complet conteneurisé (SPA servie par Caddy sur http://localhost:8
 ```
 apps/api/            # Backend FastAPI + worker Celery (même image Docker)
 apps/web/            # SPA client React
+apps/admin/          # SPA back-office React — jamais exposée publiquement
 packages/api-client/ # Client TS généré depuis l'OpenAPI — ne pas éditer
-packages/ui/         # Composants React partagés
-infra/               # Caddy, Loki, Grafana, Alloy
-scripts/             # export OpenAPI, smoke test
+packages/ui/         # Composants React partagés (SPA client + back-office)
+infra/               # Caddy (public + back-office), Loki, Grafana, Alloy
+scripts/             # export OpenAPI, smoke test, déploiement staging
 .github/workflows/   # CI bloquante + déploiement continu staging
 ```
 
@@ -79,7 +82,7 @@ serveur en DB control-plane (cookie httpOnly/SameSite=Lax, révocables), TOTP py
 (secrets chiffrés AES-256-GCM), OAuth login Google/Microsoft (OIDC, Authlib).
 **Inscription publique désactivée** : tout compte naît d'une invitation.
 
-Flux type (au curl ou via `/api/v1/docs` — la SPA arrive en Phase 3) :
+Flux type (au curl ou via `/api/v1/docs` — voir aussi la SPA, section suivante) :
 
 ```bash
 uv run saas tenant create acme --owner-email alice@example.com  # → URL d'invitation affichée
@@ -102,6 +105,28 @@ en staging : un login vaut pour tous les tenants de l'utilisateur), `PUBLIC_BASE
 `GOOGLE_CLIENT_ID/SECRET` et `MICROSOFT_CLIENT_ID/SECRET` (apps OAuth avec redirect URI
 `<PUBLIC_BASE_URL>/api/v1/auth/oauth/{provider}/callback`, scopes `openid email profile`).
 
+## Frontends + back-office (Phase 3)
+
+**SPA client** (`apps/web`) : login (mot de passe + TOTP, ou OAuth Google/Microsoft),
+acceptation d'invitation, annuaire (membres, invitations en attente, équipes), sécurité
+du compte (activation/désactivation TOTP, QR code généré côté client, codes de
+récupération affichés une seule fois). L'état d'auth vient exclusivement de
+`GET /api/v1/auth/me` (pas de store parallèle) ; un 401 redirige vers `/login`, un 403
+affiche une page « accès refusé » — dans les deux cas le serveur reste la seule autorité.
+
+**Back-office** (`apps/admin`) : réservé aux `platform_admin`, **jamais exposé
+publiquement** — en dev sur `http://localhost:5174`, en Compose/staging derrière un
+vhost Caddy dédié (`infra/caddy/Caddyfile.admin`) lié à `127.0.0.1`/WireGuard
+uniquement (le vhost public renvoie 403 sur `/api/v1/admin/*` en défense en
+profondeur). Provisionne des tenants (URL d'invitation owner affichée) et supervise
+les migrations (déclenchement Celery + rapport persisté, relu par polling). Seul moyen
+de poser le rôle plateforme :
+
+```bash
+uv run saas admin grant alice@example.com   # is_platform_admin = true (jamais via l'API)
+uv run saas admin revoke alice@example.com
+```
+
 ## Déploiement staging (modèle pull)
 
 Chaque push sur `main` : la CI passe, puis `staging-images.yml` publie les images
@@ -117,15 +142,17 @@ Mise en place initiale de la machine staging (une seule fois) :
    ajouter `contents:read` si le clone utilise ce même PAT).
 3. Créer `/srv/saas/.env` à partir de `.env.example` avec au minimum :
    `APP_ENV=staging`, `SITE_ADDRESS=staging.<domaine>` (le DNS doit pointer sur la
-   machine, wildcard `*.staging.<domaine>` recommandé pour la suite),
+   machine, wildcard `*.staging.<domaine>` recommandé pour la suite), `ADMIN_SITE_ADDRESS`
+   (hôte interne du back-office, jamais l'apex public),
    `API_IMAGE=ghcr.io/<owner>/<repo>-api:latest`, `WEB_IMAGE=ghcr.io/<owner>/<repo>-web:latest`,
+   `ADMIN_IMAGE=ghcr.io/<owner>/<repo>-admin:latest`,
    `POSTGRES_PASSWORD` et `GRAFANA_ADMIN_PASSWORD` robustes.
 4. Installer le timer :
    `sudo cp infra/systemd/saas-deploy.* /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now saas-deploy.timer`.
    Suivi : `journalctl -u saas-deploy.service`.
 5. Les ports 80/443 doivent être joignables depuis Internet (TLS automatique Caddy).
-   Grafana (:3000) et Uptime Kuma (:3001) restent liés à 127.0.0.1 : accès via
-   WireGuard/tunnel SSH uniquement.
+   Le back-office (:8081), Grafana (:3000) et Uptime Kuma (:3001) restent liés à
+   127.0.0.1 : accès via WireGuard/tunnel SSH uniquement.
 
 ## Critère de démo — Phase 0
 
@@ -135,3 +162,16 @@ staging se met à jour d'elle-même (≤ 5 minutes) ;
 `GET /api/v1/health` via le client TS généré ; la requête est visible dans
 Grafana/Loki corrélée par `request_id` ; le worker Celery tourne ;
 Uptime Kuma surveille le health.
+
+## Critère de démo — Phase 3
+
+Sur staging : Alice ouvre `acme.<domaine>`, se connecte (mot de passe puis TOTP), invite
+carol@example.com en `member` et lui transmet l'URL affichée ; Carol accepte, se connecte
+et voit les équipes mais pas le bouton d'invitation (un appel direct à l'API lui rend
+403). Alice active le TOTP depuis la page sécurité. Pendant ce temps, l'opérateur
+connecté au WireGuard ouvre le back-office, se connecte avec son compte
+`platform_admin` (posé par `saas admin grant`), crée le tenant `globex` (l'URL
+d'invitation owner s'affiche), déclenche le runner de migrations et lit le rapport base
+par base. Depuis Internet, le back-office et `/api/v1/admin/*` sont injoignables.
+Détail complet : section E de
+[`docs/phase-3-frontends-backoffice-plan.md`](docs/phase-3-frontends-backoffice-plan.md).
