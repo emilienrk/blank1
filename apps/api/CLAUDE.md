@@ -12,8 +12,9 @@ app/health/    # sonde de vie
 app/tenancy/   # catalogue, contexte tenant, engine manager, migrations runner, provisioning
 app/auth/      # sessions, mots de passe, TOTP, OAuth login, RBAC, rate limiting, purges
 app/directory/ # identités globales, memberships, invitations, annuaire, équipes (DB tenant)
-app/cli.py     # CLI `saas` (tenant create/list/retry-provision, invitation create, db upgrade)
-# Phase 3+ : app/admin/, ...
+app/admin/     # API back-office (hors contexte tenant) : tenants, migrations, lookup users
+app/cli.py     # CLI `saas` (tenant/invitation/db + admin grant/revoke)
+# Phase 4+ : app/audit/, app/gdpr/, ...
 ```
 
 Chaque module expose au besoin : `router.py` (routes FastAPI), `service.py` (logique),
@@ -50,6 +51,26 @@ Chaque module expose au besoin : `router.py` (routes FastAPI), `service.py` (log
 - Jamais d'email ni de credential dans les logs — référencer `user_id`/`tenant`.
 - Rôles en code (`owner`/`admin`/`member`, décision D6) ; règles owner (promotion,
   dernier owner intouchable) dans `app.directory.service`, pas dans le RBAC.
+
+## Back-office — règles non négociables (Phase 3)
+
+- **Toute route `/api/v1/admin/*` exige `require_platform_admin`** (`app.auth.deps`),
+  hors contexte tenant (pas de `resolve_tenant`/sous-domaine) — vérifié par
+  `test_admin_routes.py` (401/403/200 systématiques). Défense en profondeur réseau :
+  le vhost public (`infra/caddy/Caddyfile`) renvoie 403 sur ces chemins avant même
+  d'atteindre l'API ; seul le vhost interne (`Caddyfile.admin`, WireGuard) les sert.
+- **`is_platform_admin` ne se pose JAMAIS via l'API** : uniquement `saas admin
+  grant/revoke` (décision D5 Phase 3, même logique que le provisioning CLI).
+- **Migrations déclenchées depuis le back-office = tâche Celery + rapport persisté**
+  (`app.admin.models.MigrationReportRecord`, décision D6) : la route HTTP ne fait que
+  créer le rapport (`running`) et dispatcher, jamais bloquer sur la durée du runner.
+  Le dispatch (`app.admin.tasks.enqueue_migration_run`) est le point à monkeypatcher
+  en test pour simuler le worker sans broker.
+- **`app/main.py` importe `app.worker`** (dans `create_app()`) : nécessaire pour que
+  `@shared_task` résolve la bonne app Celery (broker configuré) dans le process API
+  qui dispatche via `.delay()` — sans cet import, les tâches partent sur l'app Celery
+  par défaut (non configurée). Piège à ne pas re-payer sur une future tâche dispatchée
+  depuis l'API.
 
 ## Règles
 

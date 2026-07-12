@@ -1,8 +1,14 @@
 # Dev : http://localhost:8080 — Staging : SITE_ADDRESS=staging.<domaine> (TLS automatique).
 # Le DNS staging doit prévoir le wildcard *.staging.<domaine> (résolution tenant par
-# sous-domaine à partir de la Phase 1).
+# sous-domaine à partir de la Phase 1). Vhost PUBLIC : sert la SPA client + /api en
+# excluant /api/v1/admin/* (Phase 3, décision D8 — défense en profondeur réseau en plus
+# de `require_platform_admin` ; le back-office vit sur son propre vhost, voir Caddyfile.admin).
 {$SITE_ADDRESS:http://localhost:8080} {
 	encode zstd gzip
+
+	handle /api/v1/admin/* {
+		respond 403
+	}
 
 	handle /api/* {
 		reverse_proxy api:8000

@@ -42,3 +42,12 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository }}-web:${{ github.sha }}
             ghcr.io/${{ github.repository }}-web:latest
+      - name: Image admin (back-office SPA + Caddy, jamais exposée publiquement)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/admin/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}-admin:${{ github.sha }}
+            ghcr.io/${{ github.repository }}-admin:latest
