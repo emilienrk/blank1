@@ -3,7 +3,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Link, Outlet, useNavigate } from "@tanstack/react-router";
 
 import { api } from "@/lib/api";
-import { useCurrentUser, useInvalidateCurrentUser } from "@/lib/auth";
+import { useCurrentRole, useCurrentUser, useInvalidateCurrentUser } from "@/lib/auth";
 import { currentTenantSlug } from "@/lib/tenant";
 
 /** Écouté depuis `lib/api.ts` : un 403 sur n'importe quel appel affiche cet état
@@ -30,6 +30,8 @@ function NavBar() {
   const invalidateMe = useInvalidateCurrentUser();
   const navigate = useNavigate();
   const tenant = currentTenantSlug();
+  const role = useCurrentRole();
+  const canReadAudit = role === "admin" || role === "owner";
 
   async function logout() {
     await api.POST("/api/v1/auth/logout");
@@ -54,6 +56,14 @@ function NavBar() {
                 {item.label}
               </Link>
             ))}
+            {canReadAudit && (
+              <Link
+                to="/audit"
+                className="hover:text-slate-900 [&.active]:font-semibold [&.active]:text-slate-900"
+              >
+                Journal d'audit
+              </Link>
+            )}
           </nav>
         </div>
         <div className="flex items-center gap-3 text-sm text-slate-600">

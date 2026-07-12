@@ -15,6 +15,7 @@ from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.audit.service import record_audit_event_for_tenant
 from app.auth import service
 from app.auth.deps import CurrentAuth, current_auth
 from app.auth.models import OAuthProvider
@@ -231,7 +232,7 @@ async def invitations_accept(
 ) -> StatusResponse:
     await enforce_rate_limit(request, "invitation-accept", payload.token)
     try:
-        await accept_invitation(
+        user, invitation = await accept_invitation(
             session,
             payload.token,
             password=payload.password,
@@ -240,6 +241,19 @@ async def invitations_accept(
     except DirectoryError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     await session.commit()
+    # Route publique, sans sous-domaine tenant résolu (invariant n°1) : l'audit
+    # (DB tenant) s'écrit hors contexte HTTP via `record_audit_event_for_tenant`.
+    tenant = await session.get(Tenant, invitation.tenant_id)
+    if tenant is not None:
+        await record_audit_event_for_tenant(
+            tenant,
+            action="core.member.invitation_accepted",
+            resource_type="membership",
+            resource_id=str(user.id),
+            payload={"email": user.email, "role": invitation.role},
+            actor_user_id=user.id,
+            actor_label=user.display_name or user.email,
+        )
     return StatusResponse()
 
 

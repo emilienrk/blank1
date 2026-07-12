@@ -116,7 +116,7 @@ async def list_pending_invitations(session: AsyncSession, tenant_id: uuid.UUID) 
 
 async def revoke_invitation(
     session: AsyncSession, tenant_id: uuid.UUID, invitation_id: uuid.UUID
-) -> None:
+) -> Invitation:
     invitation = await session.get(Invitation, invitation_id)
     if invitation is None or invitation.tenant_id != tenant_id:
         msg = "Invitation introuvable."
@@ -126,6 +126,7 @@ async def revoke_invitation(
         raise DirectoryError(msg)
     await session.delete(invitation)
     logger.info("invitation_revoked", tenant_id=str(tenant_id))
+    return invitation
 
 
 async def accept_invitation(
@@ -134,7 +135,7 @@ async def accept_invitation(
     *,
     password: str | None = None,
     display_name: str | None = None,
-) -> User:
+) -> tuple[User, Invitation]:
     """Consomme une invitation : crée le user au besoin, crée le membership.
 
     Nouveau user sans mot de passe = compte OAuth-only (il se connectera via
@@ -178,7 +179,7 @@ async def accept_invitation(
         user_id=str(user.id),
         role=invitation.role,
     )
-    return user
+    return user, invitation
 
 
 async def list_members(

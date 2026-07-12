@@ -15,6 +15,7 @@ from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.audit.service import record_audit_event
 from app.auth.deps import CurrentAuth, current_auth
 from app.auth.permissions import require_permission
 from app.core.db import get_control_session
@@ -29,6 +30,12 @@ router = APIRouter(prefix="/directory", tags=["directory"])
 
 ControlSession = Annotated[AsyncSession, Depends(get_control_session)]
 TenantSession = Annotated[AsyncSession, Depends(get_tenant_session)]
+
+
+def _actor_label(user: User) -> str:
+    """Libellé figé au moment du fait (décision D3 Phase 4) — jamais une jointure
+    ultérieure vers `users`, qui peut changer d'email ou disparaître."""
+    return user.display_name or user.email
 
 
 class StatusResponse(BaseModel):
@@ -68,17 +75,33 @@ async def member_change_role(
     user_id: uuid.UUID,
     payload: ChangeRoleRequest,
     ctx: Annotated[TenantContext, Depends(require_permission("core.members.manage"))],
+    auth: Annotated[CurrentAuth, Depends(current_auth)],
     session: ControlSession,
+    tenant_session: TenantSession,
 ) -> MemberOut:
     assert ctx.role is not None  # garanti par resolve_tenant
+    previous = await service.get_membership(session, ctx.tenant_id, user_id)
+    old_role = previous.role if previous is not None else None
     try:
         membership = await service.change_member_role(
             session, ctx.tenant_id, user_id, payload.role, actor_role=ctx.role
         )
     except (ValueError, service.DirectoryError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    await session.commit()
     user = await session.get_one(User, user_id)
+    # Audit avant le commit control-plane (décision D1 : au pire un événement orphelin,
+    # jamais une action sans trace) — l'audit vit en DB tenant, cross-database.
+    await record_audit_event(
+        tenant_session,
+        action="core.member.role_changed",
+        resource_type="membership",
+        resource_id=str(user_id),
+        payload={"email": user.email, "old_role": old_role, "new_role": membership.role},
+        actor_user_id=auth.user.id,
+        actor_label=_actor_label(auth.user),
+    )
+    await tenant_session.commit()
+    await session.commit()
     return MemberOut(
         user_id=user.id, email=user.email, display_name=user.display_name, role=membership.role
     )
@@ -88,13 +111,27 @@ async def member_change_role(
 async def member_remove(
     user_id: uuid.UUID,
     ctx: Annotated[TenantContext, Depends(require_permission("core.members.manage"))],
+    auth: Annotated[CurrentAuth, Depends(current_auth)],
     session: ControlSession,
+    tenant_session: TenantSession,
 ) -> StatusResponse:
     assert ctx.role is not None
+    target = await service.get_membership(session, ctx.tenant_id, user_id)
+    target_email = (await session.get_one(User, user_id)).email if target is not None else None
     try:
         await service.remove_member(session, ctx.tenant_id, user_id, actor_role=ctx.role)
     except service.DirectoryError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await record_audit_event(
+        tenant_session,
+        action="core.member.removed",
+        resource_type="membership",
+        resource_id=str(user_id),
+        payload={"email": target_email, "role": target.role if target is not None else None},
+        actor_user_id=auth.user.id,
+        actor_label=_actor_label(auth.user),
+    )
+    await tenant_session.commit()
     await session.commit()
     return StatusResponse()
 
@@ -148,6 +185,7 @@ async def invitation_create(
     ctx: Annotated[TenantContext, Depends(require_permission("core.members.manage"))],
     auth: Annotated[CurrentAuth, Depends(current_auth)],
     session: ControlSession,
+    tenant_session: TenantSession,
 ) -> InvitationOut:
     try:
         invitation, token = await service.create_invitation(
@@ -160,6 +198,16 @@ async def invitation_create(
         )
     except (ValueError, service.DirectoryError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await record_audit_event(
+        tenant_session,
+        action="core.member.invited",
+        resource_type="invitation",
+        resource_id=str(invitation.id),
+        payload={"email": invitation.email, "role": invitation.role},
+        actor_user_id=auth.user.id,
+        actor_label=_actor_label(auth.user),
+    )
+    await tenant_session.commit()
     await session.commit()
     accept_url = service.accept_url_for(token)
     await get_mailer().send(
@@ -180,12 +228,24 @@ async def invitation_create(
 async def invitation_revoke(
     invitation_id: uuid.UUID,
     ctx: Annotated[TenantContext, Depends(require_permission("core.members.manage"))],
+    auth: Annotated[CurrentAuth, Depends(current_auth)],
     session: ControlSession,
+    tenant_session: TenantSession,
 ) -> StatusResponse:
     try:
-        await service.revoke_invitation(session, ctx.tenant_id, invitation_id)
+        invitation = await service.revoke_invitation(session, ctx.tenant_id, invitation_id)
     except service.DirectoryError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    await record_audit_event(
+        tenant_session,
+        action="core.member.invitation_revoked",
+        resource_type="invitation",
+        resource_id=str(invitation_id),
+        payload={"email": invitation.email, "role": invitation.role},
+        actor_user_id=auth.user.id,
+        actor_label=_actor_label(auth.user),
+    )
+    await tenant_session.commit()
     await session.commit()
     return StatusResponse()
 
@@ -217,6 +277,7 @@ async def teams_list(
 async def team_create(
     payload: CreateTeamRequest,
     ctx: Annotated[TenantContext, Depends(require_permission("core.teams.manage"))],
+    auth: Annotated[CurrentAuth, Depends(current_auth)],
     session: TenantSession,
 ) -> TeamOut:
     existing = await session.scalar(select(Team).where(Team.name == payload.name))
@@ -224,6 +285,16 @@ async def team_create(
         raise HTTPException(status_code=409, detail="Une équipe porte déjà ce nom")
     team = Team(name=payload.name, description=payload.description)
     session.add(team)
+    await session.flush()
+    await record_audit_event(
+        session,
+        action="core.team.created",
+        resource_type="team",
+        resource_id=str(team.id),
+        payload={"name": team.name},
+        actor_user_id=auth.user.id,
+        actor_label=_actor_label(auth.user),
+    )
     await session.commit()
     return TeamOut(id=team.id, name=team.name, description=team.description)
 
@@ -232,11 +303,21 @@ async def team_create(
 async def team_delete(
     team_id: uuid.UUID,
     ctx: Annotated[TenantContext, Depends(require_permission("core.teams.manage"))],
+    auth: Annotated[CurrentAuth, Depends(current_auth)],
     session: TenantSession,
 ) -> StatusResponse:
     team = await session.get(Team, team_id)
     if team is None:
         raise HTTPException(status_code=404, detail="Équipe introuvable")
+    await record_audit_event(
+        session,
+        action="core.team.deleted",
+        resource_type="team",
+        resource_id=str(team.id),
+        payload={"name": team.name},
+        actor_user_id=auth.user.id,
+        actor_label=_actor_label(auth.user),
+    )
     await session.delete(team)
     await session.commit()
     return StatusResponse()
@@ -277,6 +358,7 @@ async def team_member_add(
     team_id: uuid.UUID,
     payload: AddTeamMemberRequest,
     ctx: Annotated[TenantContext, Depends(require_permission("core.teams.manage"))],
+    auth: Annotated[CurrentAuth, Depends(current_auth)],
     control_session: ControlSession,
     session: TenantSession,
 ) -> StatusResponse:
@@ -295,6 +377,15 @@ async def team_member_add(
     if duplicate is not None:
         raise HTTPException(status_code=409, detail="Déjà membre de l'équipe")
     session.add(TeamMember(team_id=team_id, user_id=payload.user_id))
+    await record_audit_event(
+        session,
+        action="core.team.member_added",
+        resource_type="team",
+        resource_id=str(team_id),
+        payload={"team_name": team.name, "user_id": str(payload.user_id)},
+        actor_user_id=auth.user.id,
+        actor_label=_actor_label(auth.user),
+    )
     await session.commit()
     return StatusResponse()
 
@@ -304,6 +395,7 @@ async def team_member_remove(
     team_id: uuid.UUID,
     user_id: uuid.UUID,
     ctx: Annotated[TenantContext, Depends(require_permission("core.teams.manage"))],
+    auth: Annotated[CurrentAuth, Depends(current_auth)],
     session: TenantSession,
 ) -> StatusResponse:
     team_member = await session.scalar(
@@ -311,6 +403,16 @@ async def team_member_remove(
     )
     if team_member is None:
         raise HTTPException(status_code=404, detail="Membre d'équipe introuvable")
+    team = await session.get(Team, team_id)
+    await record_audit_event(
+        session,
+        action="core.team.member_removed",
+        resource_type="team",
+        resource_id=str(team_id),
+        payload={"team_name": team.name if team is not None else None, "user_id": str(user_id)},
+        actor_user_id=auth.user.id,
+        actor_label=_actor_label(auth.user),
+    )
     await session.delete(team_member)
     await session.commit()
     return StatusResponse()

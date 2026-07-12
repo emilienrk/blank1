@@ -10,6 +10,7 @@ import { AppLayout } from "@/layout";
 import { meQueryOptions } from "@/lib/auth";
 import { AcceptInvitationPage } from "@/pages/accept-invitation";
 import { AccountSecurityPage } from "@/pages/account-security";
+import { AuditPage } from "@/pages/audit";
 import { HomePage } from "@/pages/home";
 import { LoginPage } from "@/pages/login";
 import { MembersPage } from "@/pages/members";
@@ -79,10 +80,22 @@ const accountSecurityRoute = createRoute({
   component: AccountSecurityPage,
 });
 
+const auditRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: "/audit",
+  component: AuditPage,
+});
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
   acceptInvitationRoute,
-  appLayoutRoute.addChildren([indexRoute, membersRoute, teamsRoute, accountSecurityRoute]),
+  appLayoutRoute.addChildren([
+    indexRoute,
+    membersRoute,
+    teamsRoute,
+    accountSecurityRoute,
+    auditRoute,
+  ]),
 ]);
 
 export function createAppRouter(queryClient: QueryClient) {
