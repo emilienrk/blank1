@@ -22,6 +22,7 @@ from app.core.config import Settings
 from app.core.db import get_control_sessionmaker
 from app.directory.models import User
 from app.main import create_app
+from app.tenancy.provisioning import provision_tenant
 from tests.conftest import requires_postgres
 from tests.helpers import (
     add_catalog_tenant,
@@ -67,7 +68,7 @@ def test_require_permission_rejects_unknown_permission() -> None:
 @requires_postgres
 async def test_permission_matrix_over_http(db_env: Settings) -> None:
     """member lit l'annuaire mais ne gère pas ; l'anonyme est 401 ; l'étranger 403."""
-    tenant = await add_catalog_tenant("acme")
+    tenant = await provision_tenant("acme", "ACME")
     member = await create_user("member@example.com")
     await add_membership(member.id, tenant.id, ROLE_MEMBER)
     member_token = await create_session_token(member.id)

@@ -13,8 +13,10 @@ app/tenancy/   # catalogue, contexte tenant, engine manager, migrations runner, 
 app/auth/      # sessions, mots de passe, TOTP, OAuth login, RBAC, rate limiting, purges
 app/directory/ # identités globales, memberships, invitations, annuaire, équipes (DB tenant)
 app/admin/     # API back-office (hors contexte tenant) : tenants, migrations, lookup users
-app/cli.py     # CLI `saas` (tenant/invitation/db + admin grant/revoke)
-# Phase 4+ : app/audit/, app/gdpr/, ...
+app/audit/     # journal d'audit applicatif (DB tenant, append-only)
+app/gdpr/      # export, effacement (délai de grâce), rétention/purge
+app/cli.py     # CLI `saas` (tenant/invitation/db/export/delete + admin grant/revoke)
+# Phase 5+ : app/connectors/, ...
 ```
 
 Chaque module expose au besoin : `router.py` (routes FastAPI), `service.py` (logique),
@@ -71,6 +73,35 @@ Chaque module expose au besoin : `router.py` (routes FastAPI), `service.py` (log
   qui dispatche via `.delay()` — sans cet import, les tâches partent sur l'app Celery
   par défaut (non configurée). Piège à ne pas re-payer sur une future tâche dispatchée
   depuis l'API.
+
+## Audit + RGPD — règles non négociables (Phase 4)
+
+- **Toute action métier significative écrit son audit dans la même transaction que
+  l'action** (`app.audit.service.record_audit_event`, décision D1) : la table
+  `audit_events` vit en **DB tenant** (donnée du client), jamais en control-plane, et
+  n'est jamais dupliquée en clair dans les logs techniques (invariant racine n°4).
+  Pour les actions purement tenant (équipes), l'atomicité est stricte : même session,
+  rollback commun. Pour les actions control-plane (invitations, rôles), l'audit
+  commit avant l'action (au pire un événement orphelin, jamais une action sans trace)
+  — `record_audit_event_for_tenant` (`app.audit.service`) couvre les écritures hors
+  contexte HTTP tenant (route publique d'acceptation, provisioning, tâches beat).
+- **`audit_events` est append-only** : aucune route ni fonction de modification/suppression
+  en dehors de la politique de rétention (`app.gdpr.retention`) — pas même pour un
+  `platform_admin`. Registre typé des actions connues (`app.audit.service.ACTIONS`,
+  namespaces `core.*` maintenant, `connector.*`/`module_x.*` réservés aux phases suivantes).
+- **L'effacement RGPD passe toujours par le délai de grâce** (`app.gdpr.erasure`) :
+  `request_erasure` bascule l'état catalogue en `pending_deletion` (refusé par
+  `resolve_tenant` comme `suspended`) ; seule la tâche beat `execute_pending_erasures`
+  exécute le `DROP DATABASE` après `gdpr_erasure_grace_days`, en réutilisant
+  `drop_database_if_exists` du provisioning (invariant I6 Phase 1 : identifiant
+  toujours dérivé d'un slug validé). Aucun autre chemin de drop.
+- **Les exports RGPD** (`app.gdpr.export`) sont chiffrés au repos (`KeyProvider`
+  existant) et à durée de vie bornée (`gdpr_export_ttl_days`, purge beat) ; jamais
+  servis par la surface publique — back-office (`require_platform_admin`) ou CLI
+  uniquement (décision D5).
+- **Les tâches beat qui itèrent les tenants posent le contexte explicitement**
+  (`app.tenancy.context.tenant_context` + `TenantEngineManager.session`) — voir
+  `app.gdpr.tasks` pour le pattern (rétention, effacements arrivés à échéance).
 
 ## Règles
 

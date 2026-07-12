@@ -3,6 +3,7 @@
 """Back-office (Phase 3 T6) : `/api/v1/admin/*`, toutes derrière `require_platform_admin`."""
 
 import uuid
+from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -14,6 +15,8 @@ from app.admin import tasks as admin_tasks
 from app.core.config import Settings
 from app.core.db import get_control_sessionmaker
 from app.directory.models import Membership, User
+from app.gdpr import export as gdpr_export
+from app.gdpr import tasks as gdpr_tasks
 from app.main import create_app
 from app.tenancy.models import Tenant, TenantState
 from app.tenancy.provisioning import create_database, provision_tenant
@@ -193,3 +196,65 @@ async def test_last_report_empty_when_never_run(db_env: Settings) -> None:
         response = client.get("/api/v1/admin/migrations/last-report")
         assert response.status_code == 200
         assert response.json() is None
+
+
+async def test_admin_export_dispatches_and_lists_download(
+    db_env: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db_env.gdpr_export_dir = str(tmp_path)
+    await provision_tenant("acme", "ACME")
+    admin = await create_user("root@example.com")
+    await _promote(admin)
+    admin_token = await create_session_token(admin.id)
+    await reset_db_engines()
+
+    dispatched: list[str] = []
+
+    async def fake_enqueue(slug: str) -> None:
+        dispatched.append(slug)
+        await gdpr_export.run_export(slug, settings=db_env)
+
+    monkeypatch.setattr(gdpr_tasks, "enqueue_export", fake_enqueue)
+
+    with TestClient(create_app()) as client:
+        client.cookies.set(db_env.session_cookie_name, admin_token)
+        started = client.post("/api/v1/admin/tenants/acme/export")
+        assert started.status_code == 202, started.text
+        assert dispatched == ["acme"]
+
+        listed = client.get("/api/v1/admin/tenants/acme/exports")
+        assert listed.status_code == 200
+        files = listed.json()
+        assert len(files) == 1
+        filename = files[0]["filename"]
+
+        downloaded = client.get(f"/api/v1/admin/tenants/acme/exports/{filename}/download")
+        assert downloaded.status_code == 200
+        assert downloaded.content  # archive chiffrée non vide
+
+        missing = client.get("/api/v1/admin/tenants/acme/exports/../../etc/passwd/download")
+        assert missing.status_code == 404
+
+
+async def test_admin_request_and_cancel_erasure(db_env: Settings) -> None:
+    await provision_tenant("acme", "ACME")
+    admin = await create_user("root@example.com")
+    await _promote(admin)
+    admin_token = await create_session_token(admin.id)
+    await reset_db_engines()
+
+    with TestClient(create_app()) as client:
+        client.cookies.set(db_env.session_cookie_name, admin_token)
+        requested = client.post("/api/v1/admin/tenants/acme/request-erasure")
+        assert requested.status_code == 200, requested.text
+        assert requested.json()["state"] == "pending_deletion"
+
+        again = client.post("/api/v1/admin/tenants/acme/request-erasure")
+        assert again.status_code == 400
+
+        cancelled = client.post("/api/v1/admin/tenants/acme/cancel-erasure")
+        assert cancelled.status_code == 200
+        assert cancelled.json()["state"] == "active"
+
+        cancel_again = client.post("/api/v1/admin/tenants/acme/cancel-erasure")
+        assert cancel_again.status_code == 400

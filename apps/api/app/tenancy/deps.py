@@ -47,6 +47,10 @@ async def resolve_tenant(
         raise HTTPException(status_code=404, detail="Tenant introuvable")
     if tenant.state is TenantState.SUSPENDED:
         raise HTTPException(status_code=403, detail="Tenant suspendu")
+    if tenant.state is TenantState.PENDING_DELETION:
+        # Effacement RGPD demandé (Phase 4 T5, D2) : inaccessible immédiatement,
+        # la destruction physique suit après le délai de grâce.
+        raise HTTPException(status_code=403, detail="Tenant en cours d'effacement")
 
     if auth is None:
         raise HTTPException(status_code=401, detail="Authentification requise")

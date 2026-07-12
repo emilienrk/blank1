@@ -5,14 +5,17 @@ depuis les tests async (le thread n'a pas de boucle en cours).
 """
 
 import asyncio
+from pathlib import Path
 
+import pytest
 from sqlalchemy import select
 from typer.testing import CliRunner
 
 from app.cli import app
-from app.core.config import Settings
+from app.core.config import Settings, get_settings
 from app.core.db import get_control_sessionmaker
 from app.directory.models import User
+from app.tenancy.models import Tenant, TenantState
 from tests.conftest import TENANT_HEAD_REVISION, requires_postgres
 from tests.helpers import reset_db_engines
 
@@ -21,8 +24,8 @@ pytestmark = requires_postgres
 runner = CliRunner()
 
 
-async def _invoke(*args: str) -> tuple[int, str]:
-    result = await asyncio.to_thread(runner.invoke, app, list(args))
+async def _invoke(*args: str, input_text: str | None = None) -> tuple[int, str]:
+    result = await asyncio.to_thread(runner.invoke, app, list(args), input=input_text)
     return result.exit_code, result.output
 
 
@@ -116,5 +119,68 @@ async def test_cli_invitation_create(db_env: Settings) -> None:
     assert code == 1
     assert "ERREUR" in output
     code, output = await _invoke("invitation", "create", "nexiste-pas", "bob@example.com")
+    assert code == 1
+    assert "ERREUR" in output
+
+
+async def test_cli_tenant_export(
+    db_env: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("GDPR_EXPORT_DIR", str(tmp_path / "exports"))
+    get_settings.cache_clear()
+
+    code, _ = await _invoke("tenant", "create", "acme")
+    assert code == 0
+
+    code, output = await _invoke("tenant", "export", "acme")
+    assert code == 0, output
+    assert "Export prêt" in output
+    assert next((tmp_path / "exports").glob("export_acme_*.tar.enc")).exists()
+
+    code, output = await _invoke("tenant", "export", "nexiste-pas")
+    assert code == 1
+    assert "ERREUR" in output
+
+
+async def test_cli_tenant_delete_requires_slug_confirmation(db_env: Settings) -> None:
+    code, _ = await _invoke("tenant", "create", "acme")
+    assert code == 0
+
+    # Confirmation invalide (re-saisie erronée) → refus, tenant intact.
+    code, output = await _invoke("tenant", "delete", "acme", input_text="pas-le-bon-slug\n")
+    assert code == 1
+    assert "Confirmation invalide" in output
+    async with get_control_sessionmaker()() as session:
+        tenant = await session.scalar(select(Tenant).where(Tenant.slug == "acme"))
+        assert tenant is not None
+        assert tenant.state is TenantState.ACTIVE
+    await reset_db_engines()
+
+    code, output = await _invoke("tenant", "delete", "acme", input_text="acme\n")
+    assert code == 0, output
+    assert "Effacement demandé" in output
+    async with get_control_sessionmaker()() as session:
+        tenant = await session.scalar(select(Tenant).where(Tenant.slug == "acme"))
+        assert tenant is not None
+        assert tenant.state is TenantState.PENDING_DELETION
+    await reset_db_engines()
+
+
+async def test_cli_tenant_cancel_delete(db_env: Settings) -> None:
+    code, _ = await _invoke("tenant", "create", "acme")
+    assert code == 0
+    code, _ = await _invoke("tenant", "delete", "acme", input_text="acme\n")
+    assert code == 0
+
+    code, output = await _invoke("tenant", "cancel-delete", "acme")
+    assert code == 0, output
+    assert "de nouveau actif" in output
+    async with get_control_sessionmaker()() as session:
+        tenant = await session.scalar(select(Tenant).where(Tenant.slug == "acme"))
+        assert tenant is not None
+        assert tenant.state is TenantState.ACTIVE
+    await reset_db_engines()
+
+    code, output = await _invoke("tenant", "cancel-delete", "nexiste-pas")
     assert code == 1
     assert "ERREUR" in output

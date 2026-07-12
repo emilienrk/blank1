@@ -20,6 +20,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
 
+from app.audit.service import CLI_ACTOR_LABEL, record_audit_event_for_tenant
 from app.core.config import Settings, get_settings
 from app.core.db import get_control_sessionmaker
 from app.tenancy.migrations_runner import upgrade_database_sync
@@ -93,6 +94,16 @@ async def _run_provisioning_steps(tenant: Tenant, settings: Settings) -> None:
     database_url = settings.tenant_database_url(tenant.db_name, tenant.db_host)
     await asyncio.to_thread(upgrade_database_sync, "tenant", database_url)
     await _seed_tenant_database(database_url, tenant.slug)
+    # Premier événement de la vie du tenant (Phase 4 T2) — acteur `cli` : le
+    # provisioning n'est déclenché que par la CLI ou le back-office (jamais l'API tenant).
+    await record_audit_event_for_tenant(
+        tenant,
+        action="core.tenant.provisioned",
+        resource_type="tenant",
+        resource_id=str(tenant.id),
+        payload={"slug": tenant.slug, "name": tenant.name},
+        actor_label=CLI_ACTOR_LABEL,
+    )
 
 
 async def provision_tenant(slug: str, name: str, *, settings: Settings | None = None) -> Tenant:

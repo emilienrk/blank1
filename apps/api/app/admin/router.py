@@ -6,9 +6,11 @@ routes (défense en profondeur réseau, décision D8 — voir `infra/caddy`).
 """
 
 import uuid
-from typing import Annotated
+from datetime import datetime
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,12 +21,19 @@ from app.auth.deps import require_platform_admin
 from app.core.db import get_control_session
 from app.directory.models import User
 from app.directory.service import DirectoryError
+from app.gdpr import tasks as gdpr_tasks
+from app.gdpr.erasure import GdprErasureError, cancel_erasure, request_erasure
+from app.gdpr.export import GdprExportError, export_path, list_exports
 from app.tenancy.provisioning import ProvisioningError, provision_tenant, retry_provision
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 ControlSession = Annotated[AsyncSession, Depends(get_control_session)]
 PlatformAdmin = Annotated[User, Depends(require_platform_admin)]
+
+
+class StatusResponse(BaseModel):
+    status: Literal["ok"] = "ok"
 
 
 # --- Tenants ---
@@ -38,6 +47,8 @@ class TenantSummaryOut(BaseModel):
     plan: str
     db_name: str
     schema_revision: str | None
+    deletion_requested_at: datetime | None
+    erasure_due_at: datetime | None
 
 
 def _tenant_out(summary: service.TenantSummary) -> TenantSummaryOut:
@@ -49,6 +60,8 @@ def _tenant_out(summary: service.TenantSummary) -> TenantSummaryOut:
         plan=summary.plan,
         db_name=summary.db_name,
         schema_revision=summary.schema_revision,
+        deletion_requested_at=summary.deletion_requested_at,
+        erasure_due_at=summary.erasure_due_at,
     )
 
 
@@ -98,6 +111,63 @@ async def tenants_retry_provision(slug: str, _: PlatformAdmin) -> TenantSummaryO
     try:
         tenant = await retry_provision(slug)
     except ProvisioningError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    summary = await service.tenant_summary(tenant)
+    return _tenant_out(summary)
+
+
+# --- RGPD : export (T4) ---
+
+
+class ExportFileOut(BaseModel):
+    filename: str
+    size_bytes: int
+    created_at: datetime
+
+
+@router.post("/tenants/{slug}/export", operation_id="adminExportTenant", status_code=202)
+async def tenants_export(slug: str, _: PlatformAdmin) -> StatusResponse:
+    """Dispatch Celery (T4) : `pg_dump` peut durer, la route ne bloque jamais dessus —
+    consulter `GET .../exports` pour l'archive une fois prête."""
+    await gdpr_tasks.enqueue_export(slug)
+    return StatusResponse()
+
+
+@router.get("/tenants/{slug}/exports", operation_id="adminListTenantExports")
+async def tenants_exports_list(slug: str, _: PlatformAdmin) -> list[ExportFileOut]:
+    return [
+        ExportFileOut(filename=f.filename, size_bytes=f.size_bytes, created_at=f.created_at)
+        for f in list_exports(slug)
+    ]
+
+
+@router.get("/tenants/{slug}/exports/{filename}/download", operation_id="adminDownloadTenantExport")
+async def tenants_export_download(slug: str, filename: str, _: PlatformAdmin) -> FileResponse:
+    try:
+        path = export_path(slug, filename)
+    except GdprExportError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return FileResponse(path, media_type="application/octet-stream", filename=filename)
+
+
+# --- RGPD : effacement (T5) ---
+
+
+@router.post("/tenants/{slug}/request-erasure", operation_id="adminRequestTenantErasure")
+async def tenants_request_erasure(slug: str, _: PlatformAdmin) -> TenantSummaryOut:
+    try:
+        tenant = await request_erasure(slug)
+    except GdprErasureError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    summary = await service.tenant_summary(tenant)
+    return _tenant_out(summary)
+
+
+@router.post("/tenants/{slug}/cancel-erasure", operation_id="adminCancelTenantErasure")
+async def tenants_cancel_erasure(slug: str, _: PlatformAdmin) -> TenantSummaryOut:
+    try:
+        tenant = await cancel_erasure(slug)
+    except GdprErasureError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     summary = await service.tenant_summary(tenant)
     return _tenant_out(summary)

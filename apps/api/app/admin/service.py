@@ -7,7 +7,7 @@ duplication de la logique déjà exercée par le CLI, décision D6/T6).
 
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import structlog
 from sqlalchemy import select
@@ -47,12 +47,19 @@ class TenantSummary:
     plan: str
     db_name: str
     schema_revision: str | None
+    deletion_requested_at: datetime | None
+    erasure_due_at: datetime | None
 
 
 async def tenant_summary(tenant: Tenant) -> TenantSummary:
     settings = get_settings()
     url = settings.tenant_database_url(tenant.db_name, tenant.db_host)
     revision = await read_schema_revision(url)
+    erasure_due_at = (
+        tenant.deletion_requested_at + timedelta(days=settings.gdpr_erasure_grace_days)
+        if tenant.deletion_requested_at is not None
+        else None
+    )
     return TenantSummary(
         id=tenant.id,
         slug=tenant.slug,
@@ -61,6 +68,8 @@ async def tenant_summary(tenant: Tenant) -> TenantSummary:
         plan=tenant.plan,
         db_name=tenant.db_name,
         schema_revision=revision,
+        deletion_requested_at=tenant.deletion_requested_at,
+        erasure_due_at=erasure_due_at,
     )
 
 
