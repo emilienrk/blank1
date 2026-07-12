@@ -15,6 +15,8 @@ from app.core.config import get_settings
 from app.core.db import dispose_control_engine
 from app.core.logging import configure_logging
 from app.directory.service import DirectoryError
+from app.gdpr.erasure import GdprErasureError, cancel_erasure, request_erasure
+from app.gdpr.export import GdprExportError, run_export
 from app.tenancy.engine_manager import dispose_engine_manager
 from app.tenancy.migrations_runner import (
     MigrationReport,
@@ -126,6 +128,55 @@ def tenant_retry_provision(
         typer.echo(f"ERREUR : {exc}", err=True)
         raise typer.Exit(code=1) from exc
     typer.echo(f"Tenant {tenant.slug!r} actif (base {tenant.db_name}).")
+
+
+@tenant_app.command("export")
+def tenant_export(
+    slug: Annotated[str, typer.Argument(help="Slug du tenant à exporter (RGPD).")],
+) -> None:
+    """Lance et attend l'export RGPD (dump + control-plane + manifeste, archive chiffrée)."""
+    try:
+        path = run_async(run_export(slug))
+    except GdprExportError as exc:
+        typer.echo(f"ERREUR : {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(f"Export prêt : {path}")
+
+
+@tenant_app.command("delete")
+def tenant_delete(
+    slug: Annotated[str, typer.Argument(help="Slug du tenant à effacer (RGPD, irréversible).")],
+) -> None:
+    """Demande l'effacement RGPD — confirmation par re-saisie du slug (opération la
+    plus destructrice du système). Le tenant devient inaccessible immédiatement ;
+    la destruction physique de la base suit après le délai de grâce configuré."""
+    typer.echo(f"Cette opération va effacer définitivement le tenant {slug!r} (RGPD).")
+    confirmation = typer.prompt(f"Re-saisissez {slug!r} pour confirmer")
+    if confirmation != slug:
+        typer.echo("Confirmation invalide — annulé.", err=True)
+        raise typer.Exit(code=1)
+    try:
+        tenant = run_async(request_erasure(slug))
+    except GdprErasureError as exc:
+        typer.echo(f"ERREUR : {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(
+        f"Effacement demandé pour {tenant.slug!r} — inaccessible immédiatement, "
+        f"destruction physique après le délai de grâce (`cancel-delete` pour annuler)."
+    )
+
+
+@tenant_app.command("cancel-delete")
+def tenant_cancel_delete(
+    slug: Annotated[str, typer.Argument(help="Slug d'un tenant en attente d'effacement.")],
+) -> None:
+    """Annule une demande d'effacement pendant le délai de grâce."""
+    try:
+        tenant = run_async(cancel_erasure(slug))
+    except GdprErasureError as exc:
+        typer.echo(f"ERREUR : {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(f"Effacement annulé — tenant {tenant.slug!r} de nouveau actif.")
 
 
 async def _tenant_rows() -> list[tuple[Tenant, str]]:

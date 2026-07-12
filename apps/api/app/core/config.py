@@ -68,6 +68,12 @@ class Settings(BaseSettings):
     auth_rate_limit_attempts: int = 10
     auth_rate_limit_window_seconds: int = 300
 
+    # --- Audit + RGPD (Phase 4) ---
+    audit_retention_days: int = 365
+    gdpr_export_dir: str = "/var/lib/saas/gdpr-exports"
+    gdpr_export_ttl_days: int = 7
+    gdpr_erasure_grace_days: int = 7
+
     def master_key_bytes(self) -> bytes:
         """Clé maître de chiffrement (32 octets). Refuse de démarrer sans clé hors dev."""
         if self.auth_master_key:
