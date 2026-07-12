@@ -1,6 +1,6 @@
 # Socle SaaS B2B multi-tenant — conventions du monorepo
 
-Plans de référence : `docs/architecture-plan.md` (global) et `docs/phase-5-connecteurs-plan.md` (phase courante — plan validé, implémenté).
+Plans de référence : `docs/architecture-plan.md` (global) et `docs/phase-6-ai-gateway-plan.md` (phase courante — plan validé, implémenté).
 
 ## Carte du repo
 
@@ -67,6 +67,14 @@ Tout passe par le `Makefile` : `make install`, `make dev`, `make lint`, `make ty
     Deux nouvelles routes anonymes (liste fermée, invariant n°9) :
     `connectors/{provider}/callback` (OAuth tiers) et `webhooks/{provider}/{route_key}`
     (notifications providers, authentifiées avant tout traitement).
+14. **Tout appel IA passe par `AIGateway`** (Phase 6, `app.ai.gateway`) : aucun import de
+    `litellm` ni d'un SDK provider hors de `app/ai/` ; jamais d'appel IA sans contexte
+    tenant. **Jamais de contenu de prompt ni de complétion** dans les logs techniques ni
+    dans `ai_usage_events` — uniquement des métriques (tokens, latence, coût, statut).
+    Chaque appel produit exactement un événement d'usage (succès comme échec, fondation
+    facturation). La **politique zéro-rétention** est infranchissable par configuration
+    (liste ZDR en code, refus explicite hors liste). Clés provider (plateforme via env,
+    BYOK chiffré `KeyProvider`) jamais en clair en base ni dans les logs.
 
 ## Conventions
 

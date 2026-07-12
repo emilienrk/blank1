@@ -46,11 +46,18 @@ celery_app.conf.update(
             "task": "connectors.renew_subscriptions",
             "schedule": 3600.0,
         },
+        # Agrégation quotidienne de l'usage IA + recalage quotas + purge des bruts
+        # (Phase 6 T4). Quotidien : les agrégats se raisonnent à la journée.
+        "ai-daily-usage-rollup": {
+            "task": "core.ai.daily_usage_rollup",
+            "schedule": 86400.0,
+        },
     },
 )
 
 # Les tâches déclarées par module (@shared_task) se rattachent à l'app par import.
 import app.admin.tasks  # noqa: E402  # pyright: ignore[reportUnusedImport]
+import app.ai.tasks  # noqa: E402  # pyright: ignore[reportUnusedImport]
 import app.auth.tasks  # noqa: E402  # pyright: ignore[reportUnusedImport]
 import app.connectors.tasks  # noqa: E402  # pyright: ignore[reportUnusedImport]
 import app.gdpr.tasks  # noqa: E402, F401  # pyright: ignore[reportUnusedImport]

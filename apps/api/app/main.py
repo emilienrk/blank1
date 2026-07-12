@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 
 from app.admin.router import router as admin_router
+from app.ai.router import router as ai_router
 from app.audit.router import router as audit_router
 from app.auth.router import router as auth_router
 from app.connectors.oauth import router as connectors_oauth_router
@@ -35,6 +36,7 @@ def create_app() -> FastAPI:
     app.include_router(directory_router, prefix="/api/v1")
     app.include_router(audit_router, prefix="/api/v1")
     app.include_router(connectors_router, prefix="/api/v1")
+    app.include_router(ai_router, prefix="/api/v1")
     # Routes anonymes des connecteurs (liste fermée, invariant n°9) : callback
     # OAuth tiers + webhooks providers.
     app.include_router(connectors_oauth_router, prefix="/api/v1")

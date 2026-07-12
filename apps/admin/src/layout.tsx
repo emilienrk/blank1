@@ -18,6 +18,7 @@ function useForbidden(): boolean {
 const navItems = [
   { to: "/tenants", label: "Tenants" },
   { to: "/migrations", label: "Migrations" },
+  { to: "/ai-usage", label: "Consommation IA" },
 ] as const;
 
 function NavBar() {

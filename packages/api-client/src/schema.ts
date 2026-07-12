@@ -4,6 +4,27 @@
  */
 
 export interface paths {
+    "/api/v1/admin/ai/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Ai Usage
+         * @description Agrégats d'usage IA par tenant pour un mois (défaut : mois courant), avec les
+         *     dépassements de quota (`over_quota`).
+         */
+        get: operations["adminAIUsage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/migrations/last-report": {
         parameters: {
             query?: never;
@@ -50,6 +71,24 @@ export interface paths {
         put?: never;
         /** Tenants Create */
         post: operations["adminCreateTenant"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/tenants/{slug}/ai-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Ai Policy Get */
+        get: operations["adminGetTenantAIPolicy"];
+        /** Ai Policy Set */
+        put: operations["adminSetTenantAIPolicy"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -173,6 +212,23 @@ export interface paths {
         get: operations["adminLookupUser"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ai/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Ai Chat */
+        post: operations["aiChat"];
         delete?: never;
         options?: never;
         head?: never;
@@ -648,6 +704,87 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AIPolicyIn */
+        AIPolicyIn: {
+            /**
+             * Allowed Providers
+             * @default []
+             */
+            allowed_providers: string[];
+            /** Default Model */
+            default_model?: string | null;
+            /** Default Provider */
+            default_provider?: string | null;
+            /** Fallback Model */
+            fallback_model?: string | null;
+            /** Fallback Provider */
+            fallback_provider?: string | null;
+            /**
+             * Hard Limit Enabled
+             * @default false
+             */
+            hard_limit_enabled: boolean;
+            /** Monthly Token Quota */
+            monthly_token_quota?: number | null;
+            /**
+             * Zero Retention
+             * @default false
+             */
+            zero_retention: boolean;
+        };
+        /** AIPolicyOut */
+        AIPolicyOut: {
+            /** Allowed Providers */
+            allowed_providers: string[];
+            /** Byok Configured */
+            byok_configured: boolean;
+            /** Default Model */
+            default_model: string | null;
+            /** Default Provider */
+            default_provider: string | null;
+            /** Fallback Model */
+            fallback_model: string | null;
+            /** Fallback Provider */
+            fallback_provider: string | null;
+            /** Hard Limit Enabled */
+            hard_limit_enabled: boolean;
+            /** Monthly Token Quota */
+            monthly_token_quota: number | null;
+            /** Slug */
+            slug: string;
+            /** Zero Retention */
+            zero_retention: boolean;
+        };
+        /** AIUsageOut */
+        AIUsageOut: {
+            /** Cached Tokens */
+            cached_tokens: number;
+            /** Error Count */
+            error_count: number;
+            /** Estimated Cost Microeur */
+            estimated_cost_microeur: number;
+            /** Input Tokens */
+            input_tokens: number;
+            /** Monthly Token Quota */
+            monthly_token_quota: number;
+            /** Name */
+            name: string;
+            /** Output Tokens */
+            output_tokens: number;
+            /** Over Quota */
+            over_quota: boolean;
+            /** Request Count */
+            request_count: number;
+            /** Slug */
+            slug: string;
+            /**
+             * Tenant Id
+             * Format: uuid
+             */
+            tenant_id: string;
+            /** Total Tokens */
+            total_tokens: number;
+        };
         /** AcceptInvitationRequest */
         AcceptInvitationRequest: {
             /** Display Name */
@@ -708,6 +845,42 @@ export interface components {
         ChangeRoleRequest: {
             /** Role */
             role: string;
+        };
+        /** ChatIn */
+        ChatIn: {
+            /** Max Tokens */
+            max_tokens?: number | null;
+            /** Messages */
+            messages: components["schemas"]["ChatMessageIn"][];
+            /** Model */
+            model?: string | null;
+            /** Provider */
+            provider?: string | null;
+            /** Temperature */
+            temperature?: number | null;
+        };
+        /** ChatMessageIn */
+        ChatMessageIn: {
+            /** Content */
+            content?: string | null;
+            /** Role */
+            role: string;
+        };
+        /** ChatOut */
+        ChatOut: {
+            /** Content */
+            content: string;
+            /** Finish Reason */
+            finish_reason?: string | null;
+            /** Model */
+            model: string;
+            /** Provider */
+            provider: string;
+            /** Tool Calls */
+            tool_calls?: {
+                [key: string]: unknown;
+            }[] | null;
+            usage: components["schemas"]["UsageOut"];
         };
         /**
          * ConnectionKind
@@ -1029,6 +1202,15 @@ export interface components {
             /** Secret */
             secret: string;
         };
+        /** UsageOut */
+        UsageOut: {
+            /** Cached Tokens */
+            cached_tokens: number;
+            /** Input Tokens */
+            input_tokens: number;
+            /** Output Tokens */
+            output_tokens: number;
+        };
         /** UserLookupOut */
         UserLookupOut: {
             /** Display Name */
@@ -1067,6 +1249,37 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    adminAIUsage: {
+        parameters: {
+            query?: {
+                month?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AIUsageOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     adminGetLastMigrationReport: {
         parameters: {
             query?: never;
@@ -1147,6 +1360,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CreateTenantResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    adminGetTenantAIPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AIPolicyOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    adminSetTenantAIPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AIPolicyIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AIPolicyOut"];
                 };
             };
             /** @description Validation Error */
@@ -1365,6 +1644,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UserLookupOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    aiChat: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatOut"];
                 };
             };
             /** @description Validation Error */

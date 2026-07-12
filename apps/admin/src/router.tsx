@@ -8,6 +8,7 @@ import {
 
 import { AppLayout } from "@/layout";
 import { meQueryOptions } from "@/lib/auth";
+import { AIUsagePage } from "@/pages/ai-usage";
 import { LoginPage } from "@/pages/login";
 import { MigrationsPage } from "@/pages/migrations";
 import { TenantsPage } from "@/pages/tenants";
@@ -59,9 +60,15 @@ const migrationsRoute = createRoute({
   component: MigrationsPage,
 });
 
+const aiUsageRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: "/ai-usage",
+  component: AIUsagePage,
+});
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
-  appLayoutRoute.addChildren([indexRoute, tenantsRoute, migrationsRoute]),
+  appLayoutRoute.addChildren([indexRoute, tenantsRoute, migrationsRoute, aiUsageRoute]),
 ]);
 
 export function createAppRouter(queryClient: QueryClient) {

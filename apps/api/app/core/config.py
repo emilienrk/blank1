@@ -80,6 +80,22 @@ class Settings(BaseSettings):
     auth_rate_limit_attempts: int = 10
     auth_rate_limit_window_seconds: int = 300
 
+    # --- Gateway IA (Phase 6) ---
+    # Clés PLATEFORME par provider (invariant racine n°3 : jamais en base). Chacune
+    # optionnelle — un provider sans clé est simplement indisponible (T1).
+    anthropic_api_key: str = ""
+    openai_api_key: str = ""
+    mistral_api_key: str = ""
+    # Défauts plateforme appliqués quand la politique tenant ne surcharge rien.
+    # Mistral d'abord (France, ZDR — décision D5).
+    ai_default_provider: str = "mistral"
+    ai_default_model: str = "mistral-small-latest"
+    ai_request_timeout_seconds: int = 120
+    # Quota mensuel soft par défaut (généreux) — null en politique = ce défaut (T5).
+    ai_quota_default_monthly_tokens: int = 5_000_000
+    # Rétention des événements bruts d'usage (jours) ; les agrégats sont conservés.
+    ai_usage_raw_retention_days: int = 90
+
     # --- Audit + RGPD (Phase 4) ---
     audit_retention_days: int = 365
     gdpr_export_dir: str = "/var/lib/saas/gdpr-exports"
