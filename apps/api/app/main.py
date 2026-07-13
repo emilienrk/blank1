@@ -42,6 +42,13 @@ def create_app() -> FastAPI:
     app.include_router(connectors_oauth_router, prefix="/api/v1")
     app.include_router(webhooks_router, prefix="/api/v1")
     app.include_router(admin_router, prefix="/api/v1")
+
+    # Montage des modules métier (Phase 7) : routes sous /api/v1/modules/{name}/…,
+    # permissions rattachées aux rôles, handlers d'événements connecteurs. DERNIÈRE
+    # couture du cœur — ajouter un module ne modifie plus main.py.
+    from app.automation.mounting import mount_modules
+
+    mount_modules(app)
     return app
 
 

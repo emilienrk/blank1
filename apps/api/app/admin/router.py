@@ -19,12 +19,15 @@ from app.admin import tasks as admin_tasks
 from app.admin.models import MigrationOutcomeDict, MigrationReportRecord
 from app.ai import admin_service as ai_admin
 from app.auth.deps import require_platform_admin
+from app.automation import service as module_service
+from app.automation.registry import MODULES
 from app.core.db import get_control_session
 from app.directory.models import User
 from app.directory.service import DirectoryError
 from app.gdpr import tasks as gdpr_tasks
 from app.gdpr.erasure import GdprErasureError, cancel_erasure, request_erasure
 from app.gdpr.export import GdprExportError, export_path, list_exports
+from app.tenancy.models import Tenant
 from app.tenancy.provisioning import ProvisioningError, provision_tenant, retry_provision
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -362,3 +365,77 @@ async def ai_policy_set(
     except ai_admin.AIPolicyError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return _policy_out(view)
+
+
+# --- Modules métier (Phase 7 T3) : liste du registre + activation par tenant ---
+
+
+async def _tenant_by_slug(session: AsyncSession, slug: str) -> Tenant:
+    from sqlalchemy import select
+
+    tenant = await session.scalar(select(Tenant).where(Tenant.slug == slug))
+    if tenant is None:
+        raise HTTPException(status_code=404, detail="Tenant introuvable")
+    return tenant
+
+
+class ModuleStateOut(BaseModel):
+    name: str
+    version: str
+    title: str
+    description: str
+    enabled: bool
+    # Capabilities requises non satisfaites par le tenant (vide = activable).
+    missing_capabilities: list[str]
+
+
+@router.get("/tenants/{slug}/modules", operation_id="adminListTenantModules")
+async def tenant_modules_list(
+    slug: str, _: PlatformAdmin, session: ControlSession
+) -> list[ModuleStateOut]:
+    """Modules disponibles (registre) et leur état pour ce tenant, avec les
+    capabilities manquantes (pilote l'UI d'activation)."""
+    tenant = await _tenant_by_slug(session, slug)
+    states: list[ModuleStateOut] = []
+    for manifest in MODULES:
+        enabled = await module_service.is_module_enabled(session, tenant.id, manifest.name)
+        missing = await module_service.missing_capabilities(tenant, manifest.name)
+        states.append(
+            ModuleStateOut(
+                name=manifest.name,
+                version=manifest.version,
+                title=manifest.title,
+                description=manifest.description,
+                enabled=enabled,
+                missing_capabilities=missing,
+            )
+        )
+    return states
+
+
+@router.post("/tenants/{slug}/modules/{name}/enable", operation_id="adminEnableTenantModule")
+async def tenant_module_enable(
+    slug: str, name: str, admin: PlatformAdmin, session: ControlSession
+) -> StatusResponse:
+    tenant = await _tenant_by_slug(session, slug)
+    try:
+        await module_service.enable_module(
+            session, tenant, name, actor_user_id=admin.id, actor_label=admin.email
+        )
+    except module_service.ModuleError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return StatusResponse()
+
+
+@router.post("/tenants/{slug}/modules/{name}/disable", operation_id="adminDisableTenantModule")
+async def tenant_module_disable(
+    slug: str, name: str, admin: PlatformAdmin, session: ControlSession
+) -> StatusResponse:
+    tenant = await _tenant_by_slug(session, slug)
+    try:
+        await module_service.disable_module(
+            session, tenant, name, actor_user_id=admin.id, actor_label=admin.email
+        )
+    except module_service.ModuleError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return StatusResponse()

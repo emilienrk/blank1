@@ -15,6 +15,7 @@ import { ConnectorsPage } from "@/pages/connectors";
 import { HomePage } from "@/pages/home";
 import { LoginPage } from "@/pages/login";
 import { MembersPage } from "@/pages/members";
+import { ModuleSampleDigestPage } from "@/pages/module-sample-digest";
 import { TeamsPage } from "@/pages/teams";
 
 interface RouterContext {
@@ -93,6 +94,14 @@ const connectorsRoute = createRoute({
   component: ConnectorsPage,
 });
 
+// Module d'exemple (Phase 7) : page codée en dur dans la SPA (risque n°3 assumé —
+// un front modulaire « pluggable » serait de la sur-ingénierie sans plusieurs modules).
+const moduleSampleDigestRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: "/modules/sample-digest",
+  component: ModuleSampleDigestPage,
+});
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
   acceptInvitationRoute,
@@ -103,6 +112,7 @@ const routeTree = rootRoute.addChildren([
     accountSecurityRoute,
     auditRoute,
     connectorsRoute,
+    moduleSampleDigestRoute,
   ]),
 ]);
 

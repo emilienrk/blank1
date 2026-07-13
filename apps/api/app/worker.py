@@ -59,8 +59,18 @@ celery_app.conf.update(
 import app.admin.tasks  # noqa: E402  # pyright: ignore[reportUnusedImport]
 import app.ai.tasks  # noqa: E402  # pyright: ignore[reportUnusedImport]
 import app.auth.tasks  # noqa: E402  # pyright: ignore[reportUnusedImport]
+import app.automation.scheduler  # noqa: E402  # pyright: ignore[reportUnusedImport]
 import app.connectors.tasks  # noqa: E402  # pyright: ignore[reportUnusedImport]
 import app.gdpr.tasks  # noqa: E402, F401  # pyright: ignore[reportUnusedImport]
+
+# Runtime d'automatisation (Phase 7) : rattache permissions/actions/handlers des
+# modules côté worker (les tâches périodiques auditent `<module>.…`, les handlers
+# connecteurs s'exécutent ici) et génère les entrées beat statiques du fan-out (D4).
+from app.automation.mounting import register_runtime  # noqa: E402
+from app.automation.scheduler import beat_entries  # noqa: E402
+
+register_runtime()
+celery_app.conf.beat_schedule.update(beat_entries())
 
 
 @celery_app.task(name="core.ping")

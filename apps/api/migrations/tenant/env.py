@@ -7,6 +7,11 @@ from sqlalchemy import Connection, pool
 from sqlalchemy.ext.asyncio import create_async_engine
 
 import app.audit.tenant_models
+
+# Importer le registre des modules (Phase 7) enregistre les tables tenant de TOUS
+# les modules dans la MetaData (autogenerate) — l'ajout d'un module ne touche pas
+# cet env.py : sa ligne au registre suffit (invariant de phase n°1).
+import app.automation.registry  # pyright: ignore[reportUnusedImport]
 import app.connectors.tenant_models
 import app.directory.tenant_models
 from app.tenancy.tenant_base import TenantBase

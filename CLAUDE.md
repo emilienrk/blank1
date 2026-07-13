@@ -1,11 +1,12 @@
 # Socle SaaS B2B multi-tenant — conventions du monorepo
 
-Plans de référence : `docs/architecture-plan.md` (global) et `docs/phase-6-ai-gateway-plan.md` (phase courante — plan validé, implémenté).
+Plans de référence : `docs/architecture-plan.md` (global) et `docs/phase-7-automation-runtime-plan.md` (phase courante — plan validé, implémenté).
 
 ## Carte du repo
 
 ```
 apps/api/            # Backend FastAPI + worker Celery (même code, même image Docker)
+apps/api/app/modules/ # Modules métier (Phase 7) — un package par module, s'ajoute sans toucher au cœur
 apps/web/            # SPA client React/Vite/TS
 apps/admin/           # SPA back-office React/Vite/TS — jamais exposée publiquement (invariant n°7)
 packages/api-client/ # Client TS GÉNÉRÉ depuis l'OpenAPI — ne jamais éditer à la main
@@ -75,6 +76,18 @@ Tout passe par le `Makefile` : `make install`, `make dev`, `make lint`, `make ty
     facturation). La **politique zéro-rétention** est infranchissable par configuration
     (liste ZDR en code, refus explicite hors liste). Clés provider (plateforme via env,
     BYOK chiffré `KeyProvider`) jamais en clair en base ni dans les logs.
+15. **Ajouter un module ne modifie JAMAIS le cœur** (Phase 7, `app/automation/`) :
+    uniquement `app/modules/<name>/` + une ligne au registre (`app.automation.registry`)
+    + une migration tenant — garanti par le test structurel `test_module_isolation`. Un
+    module ne consomme QUE les briques socle (capabilities, `AIGateway`,
+    `get_tenant_session`, `record_audit_event`) et **jamais un autre module**. Toute route
+    de module porte `require_permission("<name>.…")` (vérifié au démarrage) **et** exige le
+    module actif pour le tenant (`require_module_enabled`). Permissions/tâches/actions
+    d'audit d'un module namespacées `<name>.*` (jamais `core.*`). Activation par tenant en
+    **control-plane** (`tenant_modules`, gouvernance) contrôlée par les
+    `required_capabilities` ; désactivation conserve les données tenant. Tâches
+    périodiques : beat statique + fan-out sur les tenants actifs, contexte tenant posé,
+    verrou anti-chevauchement, échec isolé par tenant. Metering IA ventilé `module=<name>`.
 
 ## Conventions
 

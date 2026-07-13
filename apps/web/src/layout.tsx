@@ -23,6 +23,7 @@ const navItems = [
   { to: "/members", label: "Membres" },
   { to: "/teams", label: "Équipes" },
   { to: "/connectors", label: "Connecteurs" },
+  { to: "/modules/sample-digest", label: "Digest" },
   { to: "/account-security", label: "Sécurité du compte" },
 ] as const;
 

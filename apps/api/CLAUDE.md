@@ -19,6 +19,9 @@ app/connectors/ # connexions OAuth tierces (Google/Microsoft), capabilities Mail
 #                refresh proactif, webhooks entrants, throttle (Phase 5)
 app/ai/        # gateway IA unique (chat/stream/embeddings via LiteLLM), politiques par
 #                tenant, metering, quotas, pricing versionné (Phase 6)
+app/automation/ # runtime de modules (Phase 7) : contrat ModuleManifest, registre,
+#                montage, activation par tenant (control-plane), scheduler fan-out
+app/modules/   # modules métier (Phase 7) : un package par module ; voir app/modules/CLAUDE.md
 app/cli.py     # CLI `saas` (tenant/invitation/db/export/delete + admin grant/revoke)
 ```
 
@@ -172,6 +175,33 @@ Chaque module expose au besoin : `router.py` (routes FastAPI), `service.py` (log
   chiffré `KeyProvider` en `tenant_ai_policies.byok_keys_enc` — **préparé, jamais exposé par
   l'API** (D7, `byok_configured` booléen seulement). Politique gérée au back-office
   (`/api/v1/admin/ai/*`), changements audités `core.ai.policy_changed`.
+
+## Runtime de modules — règles non négociables (Phase 7)
+
+- **Le cœur n'importe jamais `app/modules/*`**, sauf l'unique ligne de
+  `app/automation/registry.py` (`MODULES`) ; un module n'importe jamais un autre module
+  (décision D8). Les deux sont vérifiés par `tests/test_module_isolation.py` (analyse
+  statique) — le gardien permanent de la promesse « ajouter un module ne touche pas au
+  cœur ».
+- **Un module = `app/modules/<name>/` + une ligne au registre + une migration tenant.**
+  Rien d'autre. Contrat figé : `ModuleManifest` (`app/automation/contract.py`), versionné
+  (`version` obligatoire) — toute extension du contrat est une PR du cœur.
+- **Toute route de module** porte `require_permission("<name>.…")` (introspection
+  fail-fast au démarrage, décision D2) ; le montage y ajoute `require_module_enabled(name)`
+  sur tout le router (403 si inactif). Permissions/tâches/`audit_actions` namespacées
+  `<name>.*` — `core.*` interdit aux modules (registre + audit le refusent).
+- **Un module ne consomme QUE les briques socle** : `get_capability` (jamais les APIs
+  providers), `AIGateway` (jamais LiteLLM), `get_tenant_session`/engine manager,
+  `record_audit_event`. Ses tables vivent en DB tenant, préfixées `<name>_`, dans l'arbre
+  Alembic tenant unique (décision D5).
+- **Tâches périodiques** : signature `async (tenant_id) -> None`. Le scheduler
+  (`app.automation.scheduler`) génère une entrée beat statique par tâche ; le fan-out
+  publie une tâche unitaire par tenant actif (contexte posé, verrou Valkey par
+  (module, tâche, tenant), échec isolé). Le dispatch (`enqueue_fanout`/`enqueue_unit`) est
+  le point à monkeypatcher en test.
+- **Activation par tenant** en control-plane (`tenant_modules`, `app.automation.service`) :
+  `enable_module` refuse tant que les `required_capabilities` ne sont pas satisfaites ;
+  `disable_module` conserve les données (D6). Audit `core.module.enabled`/`disabled`.
 
 ## Règles
 

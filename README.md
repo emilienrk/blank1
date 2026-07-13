@@ -5,7 +5,9 @@ multi-fournisseurs, logs, RGPD) pour des modules d'automatisation métier.
 Plans : [architecture globale](docs/architecture-plan.md) ·
 [Phase 3 — Frontends + back-office](docs/phase-3-frontends-backoffice-plan.md) ·
 [Phase 4 — Audit + socle RGPD](docs/phase-4-audit-rgpd-plan.md) ·
-[Phase 5 — Connecteurs Google/Microsoft](docs/phase-5-connecteurs-plan.md).
+[Phase 5 — Connecteurs Google/Microsoft](docs/phase-5-connecteurs-plan.md) ·
+[Phase 6 — Gateway IA](docs/phase-6-ai-gateway-plan.md) ·
+[Phase 7 — Runtime d'automatisation](docs/phase-7-automation-runtime-plan.md).
 
 ## Stack
 
@@ -268,6 +270,57 @@ Variables d'environnement (voir `.env.example`) : `ANTHROPIC_API_KEY`, `OPENAI_A
 `AI_REQUEST_TIMEOUT_SECONDS` (déf. 120), `AI_QUOTA_DEFAULT_MONTHLY_TOKENS` (déf. généreux,
 soft), `AI_USAGE_RAW_RETENTION_DAYS` (déf. 90). **Aucun test ne consomme de clé réelle**
 (LiteLLM est doublé, les clés de test sont factices).
+
+## Runtime d'automatisation & modules (Phase 7)
+
+La **coquille** qui accueille les modules métier : chaque fonctionnalité produit vit
+dans son propre package `app/modules/<name>/`, s'ajoute **sans jamais modifier le
+cœur**, et ne consomme que les briques socle (capabilities Phase 5, `AIGateway`
+Phase 6, `record_audit_event` Phase 4, `get_tenant_session` Phase 1). Cette promesse
+est **vérifiée mécaniquement** par `tests/test_module_isolation.py` (le cœur n'importe
+aucun module hors `app/automation/registry.py` ; un module n'en importe jamais un
+autre).
+
+**Écrire un module** — la checklist complète (aucun autre fichier du cœur à toucher) :
+
+1. Créer `app/modules/<name>/` avec :
+   - `tenant_models.py` : les tables du module en **DB tenant**, préfixées `<name>_`
+     (elles rejoignent l'arbre Alembic tenant unique — décision D5).
+   - `router.py` : un `APIRouter` dont **chaque route** porte
+     `require_permission("<name>.…")` (vérifié au démarrage — invariant n°2).
+   - `service.py` : la logique (tâches, handlers d'événements). Signature imposée
+     d'une tâche périodique : `async (tenant_id) -> None`.
+   - `manifest.py` : le `ModuleManifest` (`app/automation/contract.py`) déclarant
+     `permissions` (namespacées `<name>.`, rattachées aux rôles intégrés),
+     `periodic_tasks`, `connector_events`, `required_capabilities`, `audit_actions`.
+2. Ajouter **une ligne** dans `app/automation/registry.py` (`MODULES`).
+3. Ajouter **une migration tenant** (`make revision-tenant m="<name> tables"`) pour les
+   tables du module.
+4. `make generate-client` (le contrat OpenAPI couvre les routes du module) ; si le
+   module a une page, la coder dans `apps/web` (front hard-codé, assumé — risque n°3).
+
+Le montage (`app/automation/mounting.py`, appelé une fois par `main.py`/`worker.py`)
+expose les routes sous `/api/v1/modules/{name}/…` avec une dépendance
+`require_module_enabled(name)` (403 si le module n'est pas activé pour le tenant),
+rattache les permissions aux rôles, enregistre les actions d'audit et les handlers
+d'événements connecteurs. Le **scheduler** (`app/automation/scheduler.py`, décision D4)
+génère une entrée Celery beat statique par tâche périodique qui, à chaque tick,
+publie une tâche unitaire par tenant où le module est actif — contexte tenant posé,
+verrou Valkey anti-chevauchement, isolation des échecs (un tenant en échec ne bloque
+pas les autres).
+
+**Activation par tenant** (`tenant_modules`, control-plane — gouvernance, décision D3) :
+au back-office (page « Modules »), un `platform_admin` active un module pour un tenant.
+L'activation **échoue tant que les capabilities requises ne sont pas satisfaites** par
+une connexion active (message explicite listant ce qui manque) ; la désactivation coupe
+routes et tâches mais **conserve les données** du module en DB tenant (décision D6).
+
+**Module d'exemple `sample_digest`** : trivial mais traversant tout le contrat. Sa tâche
+quotidienne liste les emails des dernières 24 h (`MailCapability`), les résume via
+`AIGateway.chat` (metering ventilé `module=sample_digest`), stocke le digest en DB
+tenant (`sample_digest_digests`) et audite `sample_digest.digest_generated`. Côté SPA
+client : page « Digest » (liste + « générer maintenant »), qui s'efface sur un 403
+(l'API pilote l'affichage).
 
 ## Déploiement staging (modèle pull)
 

@@ -19,6 +19,7 @@ const navItems = [
   { to: "/tenants", label: "Tenants" },
   { to: "/migrations", label: "Migrations" },
   { to: "/ai-usage", label: "Consommation IA" },
+  { to: "/modules", label: "Modules" },
 ] as const;
 
 function NavBar() {
