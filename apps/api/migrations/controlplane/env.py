@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 import app.ai.models
 import app.auth.models
+import app.automation.models
 import app.connectors.models
 import app.directory.models
 import app.tenancy.models
@@ -19,6 +20,7 @@ config = context.config
 _MODEL_MODULES = (
     app.ai.models,
     app.auth.models,
+    app.automation.models,
     app.connectors.models,
     app.directory.models,
     app.tenancy.models,

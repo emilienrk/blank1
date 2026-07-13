@@ -11,6 +11,7 @@ import { meQueryOptions } from "@/lib/auth";
 import { AIUsagePage } from "@/pages/ai-usage";
 import { LoginPage } from "@/pages/login";
 import { MigrationsPage } from "@/pages/migrations";
+import { ModulesPage } from "@/pages/modules";
 import { TenantsPage } from "@/pages/tenants";
 
 interface RouterContext {
@@ -66,9 +67,21 @@ const aiUsageRoute = createRoute({
   component: AIUsagePage,
 });
 
+const modulesRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: "/modules",
+  component: ModulesPage,
+});
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
-  appLayoutRoute.addChildren([indexRoute, tenantsRoute, migrationsRoute, aiUsageRoute]),
+  appLayoutRoute.addChildren([
+    indexRoute,
+    tenantsRoute,
+    migrationsRoute,
+    aiUsageRoute,
+    modulesRoute,
+  ]),
 ]);
 
 export function createAppRouter(queryClient: QueryClient) {
