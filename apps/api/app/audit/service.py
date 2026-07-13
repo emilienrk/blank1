@@ -35,6 +35,8 @@ ACTIONS: frozenset[str] = frozenset(
         "core.team.deleted",
         "core.team.member_added",
         "core.team.member_removed",
+        "core.ai.policy_changed",
+        "core.ai.quota_exceeded",
     }
 )
 

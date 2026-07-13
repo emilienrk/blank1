@@ -22,6 +22,9 @@ dependencies = [
     "google-api-python-client>=2.150",
     "google-auth>=2.35",
     "anyio>=4.4",
+    # Gateway IA (Phase 6, décision D8) : lib à évolution rapide, PINNÉE exactement.
+    # Isolée dans app/ai/gateway.py (décision D2) — la montée de version est consciente.
+    "litellm==1.92.0",
 ]
 
 [dependency-groups]

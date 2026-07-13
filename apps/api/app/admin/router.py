@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.admin import service
 from app.admin import tasks as admin_tasks
 from app.admin.models import MigrationOutcomeDict, MigrationReportRecord
+from app.ai import admin_service as ai_admin
 from app.auth.deps import require_platform_admin
 from app.core.db import get_control_session
 from app.directory.models import User
@@ -244,3 +245,120 @@ async def migrations_last_report(
 ) -> MigrationReportOut | None:
     record = await service.get_last_report(session)
     return _report_out(record) if record is not None else None
+
+
+# --- Gateway IA (Phase 6 T6) : consommation + politiques par tenant ---
+
+
+class AIUsageOut(BaseModel):
+    tenant_id: uuid.UUID
+    slug: str
+    name: str
+    input_tokens: int
+    output_tokens: int
+    cached_tokens: int
+    request_count: int
+    error_count: int
+    estimated_cost_microeur: int
+    total_tokens: int
+    monthly_token_quota: int
+    over_quota: bool
+
+
+@router.get("/ai/usage", operation_id="adminAIUsage")
+async def ai_usage(
+    _: PlatformAdmin, session: ControlSession, month: str | None = None
+) -> list[AIUsageOut]:
+    """Agrégats d'usage IA par tenant pour un mois (défaut : mois courant), avec les
+    dépassements de quota (`over_quota`)."""
+    usages = await ai_admin.list_usage(session, month)
+    return [
+        AIUsageOut(
+            tenant_id=u.tenant_id,
+            slug=u.slug,
+            name=u.name,
+            input_tokens=u.input_tokens,
+            output_tokens=u.output_tokens,
+            cached_tokens=u.cached_tokens,
+            request_count=u.request_count,
+            error_count=u.error_count,
+            estimated_cost_microeur=u.estimated_cost_microeur,
+            total_tokens=u.total_tokens,
+            monthly_token_quota=u.monthly_token_quota,
+            over_quota=u.over_quota,
+        )
+        for u in usages
+    ]
+
+
+class AIPolicyOut(BaseModel):
+    slug: str
+    default_provider: str | None
+    default_model: str | None
+    allowed_providers: list[str]
+    zero_retention: bool
+    monthly_token_quota: int | None
+    hard_limit_enabled: bool
+    fallback_provider: str | None
+    fallback_model: str | None
+    byok_configured: bool
+
+
+def _policy_out(view: ai_admin.PolicyView) -> AIPolicyOut:
+    return AIPolicyOut(
+        slug=view.slug,
+        default_provider=view.default_provider,
+        default_model=view.default_model,
+        allowed_providers=view.allowed_providers,
+        zero_retention=view.zero_retention,
+        monthly_token_quota=view.monthly_token_quota,
+        hard_limit_enabled=view.hard_limit_enabled,
+        fallback_provider=view.fallback_provider,
+        fallback_model=view.fallback_model,
+        byok_configured=view.byok_configured,
+    )
+
+
+@router.get("/tenants/{slug}/ai-policy", operation_id="adminGetTenantAIPolicy")
+async def ai_policy_get(slug: str, _: PlatformAdmin, session: ControlSession) -> AIPolicyOut:
+    try:
+        view = await ai_admin.get_policy_view(session, slug)
+    except ai_admin.AIPolicyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _policy_out(view)
+
+
+class AIPolicyIn(BaseModel):
+    default_provider: str | None = None
+    default_model: str | None = None
+    allowed_providers: list[str] = []
+    zero_retention: bool = False
+    monthly_token_quota: int | None = None
+    hard_limit_enabled: bool = False
+    fallback_provider: str | None = None
+    fallback_model: str | None = None
+
+
+@router.put("/tenants/{slug}/ai-policy", operation_id="adminSetTenantAIPolicy")
+async def ai_policy_set(
+    slug: str, payload: AIPolicyIn, admin: PlatformAdmin, session: ControlSession
+) -> AIPolicyOut:
+    try:
+        view = await ai_admin.set_policy(
+            session,
+            slug,
+            ai_admin.PolicyUpdate(
+                default_provider=payload.default_provider,
+                default_model=payload.default_model,
+                allowed_providers=payload.allowed_providers,
+                zero_retention=payload.zero_retention,
+                monthly_token_quota=payload.monthly_token_quota,
+                hard_limit_enabled=payload.hard_limit_enabled,
+                fallback_provider=payload.fallback_provider,
+                fallback_model=payload.fallback_model,
+            ),
+            actor_user_id=admin.id,
+        )
+    except ai_admin.AIPolicyError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _policy_out(view)

@@ -6,6 +6,7 @@ from alembic import context
 from sqlalchemy import Connection, pool
 from sqlalchemy.ext.asyncio import create_async_engine
 
+import app.ai.models
 import app.auth.models
 import app.connectors.models
 import app.directory.models
@@ -15,7 +16,13 @@ from app.core.db import ControlPlaneBase
 
 config = context.config
 # Référencer les modules de modèles les enregistre dans la MetaData (autogenerate).
-_MODEL_MODULES = (app.auth.models, app.connectors.models, app.directory.models, app.tenancy.models)
+_MODEL_MODULES = (
+    app.ai.models,
+    app.auth.models,
+    app.connectors.models,
+    app.directory.models,
+    app.tenancy.models,
+)
 target_metadata = ControlPlaneBase.metadata
 
 

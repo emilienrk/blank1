@@ -32,6 +32,7 @@ PERMISSIONS: frozenset[str] = frozenset(
         "core.audit.read",
         "core.connectors.read",
         "core.connectors.manage",
+        "core.ai.use",
     }
 )
 
@@ -43,6 +44,8 @@ _ADMIN_PERMISSIONS = _MEMBER_PERMISSIONS | frozenset(
         "core.tenant.settings",
         "core.audit.read",
         "core.connectors.manage",
+        # Route de test du gateway IA (Phase 6 T6) : owner/admin par défaut.
+        "core.ai.use",
     }
 )
 

@@ -17,6 +17,8 @@ app/audit/     # journal d'audit applicatif (DB tenant, append-only)
 app/gdpr/      # export, effacement (délai de grâce), rétention/purge
 app/connectors/ # connexions OAuth tierces (Google/Microsoft), capabilities Mail/Calendar,
 #                refresh proactif, webhooks entrants, throttle (Phase 5)
+app/ai/        # gateway IA unique (chat/stream/embeddings via LiteLLM), politiques par
+#                tenant, metering, quotas, pricing versionné (Phase 6)
 app/cli.py     # CLI `saas` (tenant/invitation/db/export/delete + admin grant/revoke)
 ```
 
@@ -141,6 +143,35 @@ Chaque module expose au besoin : `router.py` (routes FastAPI), `service.py` (log
   DB et le verrou de refresh par connexion. `msal` n'est donc PAS une dépendance du projet.
   Les appels Graph métier restent en `httpx` REST direct (pas de `msgraph-sdk`), conformes
   au plan.
+
+## Gateway IA — règles non négociables (Phase 6)
+
+- **Tout appel à un provider IA passe par `AIGateway`** (`app.ai.gateway.get_gateway()`) :
+  `chat`/`chat_stream`/`embed` avec des types Pydantic maison. **Aucun import de `litellm`
+  ni d'un SDK provider hors de `app/ai/`** (décision D1/D2) — LiteLLM est isolé derrière
+  des frontières remplaçables (`set_completion_fn`/`set_embedding_fn`, doublées en test) et
+  sa version est **pinnée exactement** (D8). Les modules (Phase 7) programment contre notre
+  contrat stable, jamais contre la lib tierce.
+- **Aucun appel IA sans contexte tenant** : le gateway lit `current_tenant()` (extension de
+  l'invariant racine n°1) ; chaque appel est rattaché à un tenant, un user éventuel et un
+  module. **Jamais de contenu de prompt ni de complétion** dans les logs ni dans
+  `ai_usage_events` — uniquement des métriques (tokens, latence, coût, statut).
+- **Chaque appel produit exactement un `ai_usage_events`** (control-plane), succès comme
+  échec/timeout (metering best-effort, décision D3 : l'échec d'insertion est loggé, jamais
+  levé — il ne casse pas la réponse). Prix **en code, versionnés** (`app/ai/pricing.py`,
+  `price_version` estampillé, D4). Beat quotidien (`core.ai.daily_usage_rollup`) : agrégat
+  `ai_usage_daily` idempotent + recalage quotas Valkey + purge des bruts (agrégats conservés).
+- **Politique zéro-rétention infranchissable par configuration** (`app.ai.policy`, décision
+  D5) : liste ZDR **en code** (`ZERO_RETENTION_PROVIDERS`, Mistral d'abord) ; sous
+  `zero_retention`, un provider hors liste demandé explicitement est **refusé** (`PolicyError`),
+  jamais dégradé. Le **fallback** (D6) est optionnel/désactivé par défaut et sa cible passe
+  par la même `select` (donc la même règle ZDR).
+- **Quotas soft** (`app.ai.quota`, Valkey) : au-delà du quota l'appel passe, mais l'alerte
+  est **auditée une fois par jour** (`core.ai.quota_exceeded`) + affichée au back-office.
+- **Clés provider jamais en clair** : plateforme via `Settings` (env, invariant n°3) ; BYOK
+  chiffré `KeyProvider` en `tenant_ai_policies.byok_keys_enc` — **préparé, jamais exposé par
+  l'API** (D7, `byok_configured` booléen seulement). Politique gérée au back-office
+  (`/api/v1/admin/ai/*`), changements audités `core.ai.policy_changed`.
 
 ## Règles
 

@@ -218,6 +218,57 @@ Variables d'environnement (voir `.env.example`) : `GOOGLE_CONNECTOR_CLIENT_ID/SE
 `CONNECTOR_WEBHOOK_BASE_URL` (déf. = `PUBLIC_BASE_URL` ; à surcharger si les webhooks
 entrent par un autre nom d'hôte que l'apex public).
 
+## Gateway IA (Phase 6)
+
+**Interface interne unique** pour tout appel à un modèle de langage — chat, streaming,
+tool-calling, embeddings (§6 du plan global). Bâtie sur **LiteLLM en mode bibliothèque**
+(décision D1) : aucun service supplémentaire à opérer, le routing/les politiques/le
+metering restent dans notre code typé. Tout le code (backend et modules Phase 7) appelle
+`app.ai.gateway.AIGateway` — **aucun import de `litellm` ni d'un SDK provider hors de
+`app/ai/`** (invariant de phase n°1) ; LiteLLM est un détail d'implémentation isolé
+derrière des types Pydantic maison (décision D2), et sa version est **pinnée exactement**
+(D8).
+
+**Providers supportés** : Mistral (France, ZDR — provider par défaut), Anthropic et
+OpenAI (hors UE, DPA + SCC — voir `docs/rgpd/sous-traitants.md`). Une clé plateforme par
+provider, **optionnelle** : un provider sans clé est indisponible.
+
+**Gouvernance par tenant** (`tenant_ai_policies`, gérée au **back-office** — page
+« Consommation IA ») : provider/modèle par défaut, providers autorisés, **zéro-rétention**,
+quota mensuel, fallback optionnel. La **politique zéro-rétention est infranchissable par
+configuration** (invariant n°5, décision D5) : sous `zero_retention`, seuls les providers
+d'une **liste ZDR en code** (Mistral d'abord) sont acceptés — un appel demandant
+explicitement un provider hors liste est **refusé** (jamais dégradé silencieusement). Le
+**fallback** de provider (D6) est optionnel, désactivé par défaut, et sa cible est validée
+par la même règle ZDR. Le champ **BYOK** (clé du client, chiffrée `KeyProvider`) est
+**préparé mais jamais exposé** (D7) : la plomberie est prouvée par un test.
+
+**Metering dès le premier appel** (invariant n°4) : chaque appel — succès, erreur ou
+timeout — produit **exactement un** `ai_usage_events` (control-plane), porteur **de seules
+métriques** (tokens, latence, coût estimé, statut) — **jamais de prompt ni de complétion**
+(invariant n°3). Les prix vivent **en code, versionnés** (`app/ai/pricing.py`,
+`price_version` estampillé sur chaque événement, décision D4). Un beat quotidien agrège la
+veille dans `ai_usage_daily` (rejouable) et purge les événements bruts au-delà de
+`AI_USAGE_RAW_RETENTION_DAYS` (déf. 90) — les agrégats, eux, sont conservés (fondation
+facturation).
+
+**Quotas soft** (`app/ai/quota.py`) : compteur mensuel sur Valkey, recalé chaque jour par
+l'agrégat SQL. Au-delà du quota **l'appel passe** (soft limit) mais une alerte est
+**auditée + loggée une fois par jour** (`core.ai.quota_exceeded`) et affichée au
+back-office (`over_quota`). Le hard limit est prévu mais non exposé.
+
+Surfaces : `POST /api/v1/ai/chat` (`core.ai.use`, owner/admin — écho de démo et smoke
+test, **pas d'UI de chat** : les usages viennent des modules Phase 7) ; back-office
+`GET /api/v1/admin/ai/usage` et `GET/PUT /api/v1/admin/tenants/{slug}/ai-policy` (chaque
+changement audité `core.ai.policy_changed`).
+
+Variables d'environnement (voir `.env.example`) : `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
+`MISTRAL_API_KEY` (clés plateforme, chacune optionnelle), `AI_DEFAULT_PROVIDER`
+(déf. `mistral`), `AI_DEFAULT_MODEL` (déf. `mistral-small-latest`),
+`AI_REQUEST_TIMEOUT_SECONDS` (déf. 120), `AI_QUOTA_DEFAULT_MONTHLY_TOKENS` (déf. généreux,
+soft), `AI_USAGE_RAW_RETENTION_DAYS` (déf. 90). **Aucun test ne consomme de clé réelle**
+(LiteLLM est doublé, les clés de test sont factices).
+
 ## Déploiement staging (modèle pull)
 
 Chaque push sur `main` : la CI passe, puis `staging-images.yml` publie les images
@@ -280,3 +331,18 @@ de grâce (raccourci en staging) : la DB n'existe plus, le catalogue est purgé,
 ont disparu du control-plane. La purge de rétention quotidienne tourne et se voit dans
 Loki (rapport par tenant, sans PII). Détail complet : section E de
 [`docs/phase-4-audit-rgpd-plan.md`](docs/phase-4-audit-rgpd-plan.md).
+
+## Critère de démo — Phase 6
+
+Sur staging, avec de vraies clés plateforme : `POST /api/v1/ai/chat` sur `acme` répond
+via le provider par défaut de la politique (Mistral) ; `ai_usage_events` contient
+l'événement (tokens réels, coût estimé, `price_version`). L'opérateur passe `acme` en
+zéro-rétention au back-office (page « Consommation IA ») : un appel demandant explicitement
+un provider hors liste ZDR est refusé avec une erreur claire, l'appel par défaut part chez
+Mistral. Un quota volontairement bas est posé : l'appel suivant passe mais l'alerte
+apparaît (audit `core.ai.quota_exceeded` + page back-office `over_quota`). La page
+consommation montre les agrégats par tenant après le passage du beat quotidien. Un provider
+est coupé (clé retirée) : avec fallback activé, l'appel bascule et le metering attribue au
+provider réel. Dans Loki : latences et statuts corrélés par `request_id`, **aucun fragment
+de prompt ni de réponse**. Détail complet : section E de
+[`docs/phase-6-ai-gateway-plan.md`](docs/phase-6-ai-gateway-plan.md).
