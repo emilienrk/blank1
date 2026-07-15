@@ -2,7 +2,7 @@
 # (uvicorn app.main:app vs celery -A app.worker.celery_app worker).
 # Contexte de build : la racine du repo (workspace uv).
 
-FROM python:3.12-slim AS builder
+FROM python:3.12-slim-bookworm AS builder
 COPY --from=ghcr.io/astral-sh/uv:0.8.17 /uv /uvx /usr/local/bin/
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
 WORKDIR /app
@@ -16,7 +16,7 @@ RUN uv sync --frozen --no-install-workspace --no-dev
 COPY apps/api apps/api
 RUN uv sync --frozen --no-dev
 
-FROM python:3.12-slim AS runtime
+FROM python:3.12-slim-bookworm AS runtime
 # postgresql-client-17 (dépôt PGDG — Debian bookworm n'embarque que la 15) : requis par
 # l'export RGPD (`pg_dump`/`pg_restore` en sous-processus, Phase 4 T4) — doit matcher la
 # version du serveur (Postgres 17) pour un dump/restore fiable.
