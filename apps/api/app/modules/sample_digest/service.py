@@ -25,7 +25,7 @@ from app.connectors.tenant_models import ConnectionStatus, ConnectorConnection
 from app.connectors.webhooks import ConnectorEvent
 from app.modules.sample_digest.tenant_models import SampleDigestDigest
 from app.tenancy.context import current_tenant
-from app.tenancy.engine_manager import get_engine_manager
+from app.tenancy.session import tenant_session
 
 logger = structlog.get_logger()
 
@@ -108,8 +108,8 @@ async def generate_digest(session: AsyncSession) -> SampleDigestDigest:
 async def generate_digest_task(tenant_id: uuid.UUID) -> None:
     """Tâche périodique (signature `(tenant_id) -> None`) : le scheduler a déjà posé
     le contexte tenant ; on ouvre une session, on génère, on commit."""
-    ctx = current_tenant()
-    async with get_engine_manager().session(ctx) as session:
+    current_tenant()  # fail-fast : le scheduler doit avoir posé le contexte
+    async with tenant_session() as session:
         await generate_digest(session)
         await session.commit()
 

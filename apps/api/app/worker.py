@@ -19,23 +19,6 @@ celery_app.conf.update(
     beat_schedule={
         # Purge des sessions/challenges/invitations expirés (Phase 2 T9).
         "auth-purge-expired": {"task": "core.auth.purge_expired", "schedule": 3600.0},
-        # Rétention/purge par tenant (Phase 4 T6) — quotidien, décision D7.
-        "gdpr-apply-retention-policies": {
-            "task": "core.gdpr.apply_retention_policies",
-            "schedule": 86400.0,
-        },
-        # Effacements dont le délai de grâce est écoulé (Phase 4 T5, décision D2) —
-        # horaire : le délai de grâce se compte en jours, une heure de latence est sans
-        # conséquence et raccourcit le rattrapage après un échec partiel.
-        "gdpr-execute-pending-erasures": {
-            "task": "core.gdpr.execute_pending_erasures",
-            "schedule": 3600.0,
-        },
-        # Purge des archives d'export au-delà du TTL (Phase 4 T4).
-        "gdpr-purge-expired-exports": {
-            "task": "core.gdpr.purge_expired_exports",
-            "schedule": 3600.0,
-        },
         # Refresh proactif des tokens de connecteurs (Phase 5 T6, décision D5).
         "connectors-refresh-tokens": {
             "task": "connectors.refresh_expiring_tokens",
@@ -56,12 +39,10 @@ celery_app.conf.update(
 )
 
 # Les tâches déclarées par module (@shared_task) se rattachent à l'app par import.
-import app.admin.tasks  # noqa: E402  # pyright: ignore[reportUnusedImport]
 import app.ai.tasks  # noqa: E402  # pyright: ignore[reportUnusedImport]
 import app.auth.tasks  # noqa: E402  # pyright: ignore[reportUnusedImport]
 import app.automation.scheduler  # noqa: E402  # pyright: ignore[reportUnusedImport]
-import app.connectors.tasks  # noqa: E402  # pyright: ignore[reportUnusedImport]
-import app.gdpr.tasks  # noqa: E402, F401  # pyright: ignore[reportUnusedImport]
+import app.connectors.tasks  # noqa: E402, F401  # pyright: ignore[reportUnusedImport]
 
 # Runtime d'automatisation (Phase 7) : rattache permissions/actions/handlers des
 # modules côté worker (les tâches périodiques auditent `<module>.…`, les handlers

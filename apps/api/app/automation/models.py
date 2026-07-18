@@ -13,10 +13,10 @@ from datetime import datetime
 from sqlalchemy import Boolean, DateTime, ForeignKey, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.db import ControlPlaneBase
+from app.core.db import Base
 
 
-class TenantModule(ControlPlaneBase):
+class TenantModule(Base):
     __tablename__ = "tenant_modules"
     __table_args__ = (UniqueConstraint("tenant_id", "module_name", name="uq_tenant_module"),)
 

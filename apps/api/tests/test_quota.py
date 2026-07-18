@@ -15,8 +15,8 @@ from app.ai import quota
 from app.audit.tenant_models import AuditEvent
 from app.core.config import Settings
 from app.tenancy.context import tenant_context
-from app.tenancy.engine_manager import get_engine_manager
 from app.tenancy.provisioning import provision_tenant
+from app.tenancy.session import tenant_session
 from tests.ai_helpers import (
     ctx_for,
     ctx_stub,
@@ -72,7 +72,7 @@ async def test_over_quota_alerts_once_per_day(db_env: Settings) -> None:
     assert second.over_quota and second.alerted is False
 
     with tenant_context(ctx):
-        async with get_engine_manager().session(ctx) as session:
+        async with tenant_session() as session:
             events = list((await session.scalars(select(AuditEvent))).all())
     quota_events = [e for e in events if e.action == "core.ai.quota_exceeded"]
     assert len(quota_events) == 1

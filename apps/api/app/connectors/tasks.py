@@ -5,8 +5,7 @@
 - Traitement des événements webhook (dispatchés par la route de réception) ;
 - Création des subscriptions post-connexion (dispatchée par le callback OAuth).
 
-Toutes posent explicitement le contexte tenant (invariant racine n°1) — même
-pattern que `app.gdpr.tasks`.
+Toutes posent explicitement le contexte tenant (invariant racine n°1).
 """
 
 # Celery n'expose pas de types (voir app/worker.py).
@@ -35,21 +34,14 @@ from app.connectors.webhooks import ConnectorEvent, event_handlers
 from app.core.config import get_settings
 from app.core.db import dispose_control_engine, get_control_sessionmaker
 from app.tenancy.context import TenantContext, tenant_context
-from app.tenancy.engine_manager import dispose_engine_manager, get_engine_manager
 from app.tenancy.models import Tenant, TenantState
+from app.tenancy.session import tenant_session
 
 logger = structlog.get_logger()
 
 
 def _context_for(tenant: Tenant) -> TenantContext:
-    return TenantContext(
-        tenant_id=tenant.id,
-        slug=tenant.slug,
-        state=tenant.state,
-        db_name=tenant.db_name,
-        db_host=tenant.db_host,
-        role=None,
-    )
+    return TenantContext(tenant_id=tenant.id, slug=tenant.slug)
 
 
 async def _active_tenants() -> list[Tenant]:
@@ -57,16 +49,17 @@ async def _active_tenants() -> list[Tenant]:
         return list(
             (
                 await control_session.scalars(
-                    select(Tenant).where(Tenant.state == TenantState.ACTIVE)
+                    select(Tenant).where(
+                        Tenant.state == TenantState.ACTIVE, Tenant.deleted_at.is_(None)
+                    )
                 )
             ).all()
         )
 
 
 async def _dispose_engines() -> None:
-    # Pools asyncpg liés à leur event loop (cf. app/gdpr/tasks.py).
+    # Pools asyncpg liés à leur event loop.
     await dispose_control_engine()
-    await dispose_engine_manager()
 
 
 # --- Refresh proactif des tokens (T6, beat 5 min) ---
@@ -76,7 +69,6 @@ async def refresh_expiring_tokens() -> dict[str, dict[str, int]]:
     """Itère les tenants actifs et rafraîchit les connexions expirant sous
     `connector_refresh_lead_minutes` (verrou Valkey par connexion, D5)."""
     lead = timedelta(minutes=get_settings().connector_refresh_lead_minutes)
-    manager = get_engine_manager()
     report: dict[str, dict[str, int]] = {}
     for tenant in await _active_tenants():
         ctx = _context_for(tenant)
@@ -84,7 +76,7 @@ async def refresh_expiring_tokens() -> dict[str, dict[str, int]]:
         with tenant_context(ctx):
             structlog.contextvars.bind_contextvars(tenant=ctx.slug)
             try:
-                async with manager.session(ctx) as session:
+                async with tenant_session() as session:
                     connections = (
                         await session.scalars(
                             select(ConnectorConnection).where(
@@ -142,7 +134,6 @@ async def renew_expiring_subscriptions() -> dict[str, dict[str, int]]:
     """Renouvelle les subscriptions expirant sous `RENEWAL_LEAD` (verrou par
     connexion, même pattern que le refresh) ; échec définitif → santé dégradée
     + audit `connector.subscription_renewal_failed`."""
-    manager = get_engine_manager()
     horizon = datetime.now(UTC) + subscriptions.RENEWAL_LEAD
     report: dict[str, dict[str, int]] = {}
     for tenant in await _active_tenants():
@@ -151,7 +142,7 @@ async def renew_expiring_subscriptions() -> dict[str, dict[str, int]]:
         with tenant_context(ctx):
             structlog.contextvars.bind_contextvars(tenant=ctx.slug)
             try:
-                async with manager.session(ctx) as session:
+                async with tenant_session() as session:
                     expiring = (
                         await session.scalars(
                             select(ConnectorSubscription).where(
@@ -233,7 +224,7 @@ async def sync_connection_subscriptions(slug: str, connection_id: uuid.UUID) -> 
     if route_key is None:
         return
     with tenant_context(ctx):
-        async with get_engine_manager().session(ctx) as session:
+        async with tenant_session() as session:
             connection = await session.get(ConnectorConnection, connection_id)
             if connection is None or connection.status is not ConnectionStatus.ACTIVE:
                 return
@@ -294,7 +285,7 @@ async def process_connector_event(
     with tenant_context(ctx):
         structlog.contextvars.bind_contextvars(tenant=ctx.slug)
         try:
-            async with get_engine_manager().session(ctx) as session:
+            async with tenant_session() as session:
                 connection = await session.get(ConnectorConnection, connection_id)
                 if connection is None:
                     return

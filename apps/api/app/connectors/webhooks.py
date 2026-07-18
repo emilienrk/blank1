@@ -26,8 +26,8 @@ from app.connectors.models import WebhookRoute
 from app.connectors.tenant_models import ConnectorProvider, ConnectorSubscription
 from app.core.db import get_control_session
 from app.tenancy.context import TenantContext, tenant_context
-from app.tenancy.engine_manager import get_engine_manager
 from app.tenancy.models import Tenant, TenantState
+from app.tenancy.session import tenant_session
 
 logger = structlog.get_logger()
 
@@ -163,21 +163,14 @@ async def receive_webhook(
     if route is None:
         return _neutral_response()
     tenant = await control_session.get(Tenant, route.tenant_id)
-    if tenant is None or tenant.state is not TenantState.ACTIVE:
+    if tenant is None or tenant.state is not TenantState.ACTIVE or tenant.deleted_at:
         return _neutral_response()
 
-    ctx = TenantContext(
-        tenant_id=tenant.id,
-        slug=tenant.slug,
-        state=tenant.state,
-        db_name=tenant.db_name,
-        db_host=tenant.db_host,
-        role=None,
-    )
+    ctx = TenantContext(tenant_id=tenant.id, slug=tenant.slug)
     with tenant_context(ctx):
-        async with get_engine_manager().session(ctx) as tenant_session:
+        async with tenant_session() as scoped_session:
             notifications = await _validated_notifications(
-                tenant_session, provider, route.connection_id, request
+                scoped_session, provider, route.connection_id, request
             )
 
     from app.connectors import tasks as connector_tasks

@@ -23,19 +23,13 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     valkey_url: str = "redis://localhost:6379/0"
 
-    # --- PostgreSQL (control-plane + serveurs tenant) ---
-    # Les URL ne sont JAMAIS stockées : toujours composées ici (décision D3 Phase 1).
-    # Le catalogue ne contient que db_name + alias db_host ; credentials via env.
+    # --- PostgreSQL (base unique, ADR 0001) ---
+    # L'URL n'est JAMAIS stockée : toujours composée ici depuis l'env (décision D3).
     postgres_host: str = "localhost"
     postgres_port: int = 5432
     postgres_user: str = "app"
     postgres_password: str = "change-me"
-    postgres_db: str = "controlplane"
-
-    # --- Multi-tenant ---
-    tenant_db_prefix: str = "tenant_"
-    tenant_engine_cache_size: int = 20
-    tenant_engine_pool_size: int = 2
+    postgres_db: str = "saas"
 
     # --- Auth (Phase 2) ---
     # Clé maître AES-256 encodée base64 (32 octets décodés). Obligatoire hors dev ;
@@ -96,12 +90,6 @@ class Settings(BaseSettings):
     # Rétention des événements bruts d'usage (jours) ; les agrégats sont conservés.
     ai_usage_raw_retention_days: int = 90
 
-    # --- Audit + RGPD (Phase 4) ---
-    audit_retention_days: int = 365
-    gdpr_export_dir: str = "/var/lib/saas/gdpr-exports"
-    gdpr_export_ttl_days: int = 7
-    gdpr_erasure_grace_days: int = 7
-
     def master_key_bytes(self) -> bytes:
         """Clé maître de chiffrement (32 octets). Refuse de démarrer sans clé hors dev."""
         if self.auth_master_key:
@@ -123,28 +111,17 @@ class Settings(BaseSettings):
     def connector_webhook_base(self) -> str:
         return self.connector_webhook_base_url or self.public_base_url
 
-    def _database_url(self, database: str, host: str | None = None) -> str:
+    @property
+    def database_url(self) -> str:
         url = URL.create(
             drivername="postgresql+asyncpg",
             username=self.postgres_user,
             password=self.postgres_password,
-            host=host or self.postgres_host,
+            host=self.postgres_host,
             port=self.postgres_port,
-            database=database,
+            database=self.postgres_db,
         )
         return url.render_as_string(hide_password=False)
-
-    @property
-    def control_plane_url(self) -> str:
-        return self._database_url(self.postgres_db)
-
-    def resolve_db_host(self, db_host: str) -> str:
-        """Alias logique du catalogue → hôte réel. `default` = serveur principal ;
-        la répartition multi-serveurs (§8.7) branchera ici sa table de correspondance."""
-        return self.postgres_host if db_host == "default" else db_host
-
-    def tenant_database_url(self, db_name: str, db_host: str = "default") -> str:
-        return self._database_url(db_name, host=self.resolve_db_host(db_host))
 
 
 @lru_cache

@@ -1,9 +1,11 @@
-"""Couche DB control-plane : engine async unique, sessions, Base déclarative.
+"""Couche DB : engine async unique, sessions, Base déclarative unique.
 
-Le control-plane porte le catalogue des tenants, les identités globales et les
-memberships — jamais de données métier (invariant I3 Phase 1). Les données
-métier vivent dans les DB tenant, accessibles uniquement via
-`app.tenancy.session.get_tenant_session`.
+Base unique + `tenant_id` (ADR 0001) : catalogue, identités et tables métier
+vivent dans la même base PostgreSQL. Les tables métier portent le mixin
+`app.tenancy.tenant_base.TenantScoped` et ne sont accessibles que via
+`app.tenancy.session` (filtre `tenant_id` injecté automatiquement, invariant n°1).
+Les noms `get_control_*` sont conservés pour limiter le churn : « control » désigne
+les tables NON scopées (catalogue, users, memberships).
 """
 
 from collections.abc import AsyncIterator
@@ -19,8 +21,8 @@ from sqlalchemy.orm import DeclarativeBase
 from app.core.config import get_settings
 
 
-class ControlPlaneBase(DeclarativeBase):
-    """Base déclarative du schéma control-plane (MetaData séparée du schéma tenant)."""
+class Base(DeclarativeBase):
+    """Base déclarative unique — toutes les tables, scopées tenant ou non."""
 
 
 _engine: AsyncEngine | None = None
@@ -30,7 +32,7 @@ _sessionmaker: async_sessionmaker[AsyncSession] | None = None
 def get_control_engine() -> AsyncEngine:
     global _engine
     if _engine is None:
-        _engine = create_async_engine(get_settings().control_plane_url, pool_pre_ping=True)
+        _engine = create_async_engine(get_settings().database_url, pool_pre_ping=True)
     return _engine
 
 
@@ -42,13 +44,13 @@ def get_control_sessionmaker() -> async_sessionmaker[AsyncSession]:
 
 
 async def get_control_session() -> AsyncIterator[AsyncSession]:
-    """Dépendance FastAPI : session control-plane."""
+    """Dépendance FastAPI : session sur les tables non scopées (catalogue, users)."""
     async with get_control_sessionmaker()() as session:
         yield session
 
 
 async def dispose_control_engine() -> None:
-    """Ferme l'engine control-plane (tests, arrêt propre)."""
+    """Ferme l'engine (tests, arrêt propre)."""
     global _engine, _sessionmaker
     if _engine is not None:
         await _engine.dispose()

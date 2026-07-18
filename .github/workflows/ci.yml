@@ -11,18 +11,18 @@ jobs:
     name: Backend (ruff, pyright, pytest)
     runs-on: ubuntu-latest
     # Les tests DB exigent un vrai Postgres (décision D6 Phase 1) ; les valeurs
-    # correspondent aux défauts de Settings (localhost/app/change-me/controlplane).
+    # correspondent aux défauts de Settings (localhost/app/change-me/saas).
     services:
       postgres:
         image: postgres:17
         env:
           POSTGRES_USER: app
           POSTGRES_PASSWORD: change-me
-          POSTGRES_DB: controlplane
+          POSTGRES_DB: saas
         ports:
           - "5432:5432"
         options: >-
-          --health-cmd "pg_isready -U app -d controlplane"
+          --health-cmd "pg_isready -U app -d saas"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
@@ -49,15 +49,11 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter web lint
-      - run: pnpm --filter admin lint
       - run: pnpm --filter web typecheck
-      - run: pnpm --filter admin typecheck
       - run: pnpm --filter @app/api-client typecheck
       - run: pnpm --filter @app/ui typecheck
       - run: pnpm --filter web test
-      - run: pnpm --filter admin test
       - run: pnpm --filter web build
-      - run: pnpm --filter admin build
 
   contract:
     name: Dérive du client TS (OpenAPI = source de vérité)
@@ -95,10 +91,4 @@ jobs:
         with:
           context: .
           file: apps/web/Dockerfile
-          push: false
-      - name: Image admin (back-office SPA + Caddy)
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: apps/admin/Dockerfile
           push: false

@@ -24,7 +24,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.db import ControlPlaneBase
+from app.core.db import Base
 
 
 class OAuthProvider(enum.StrEnum):
@@ -36,7 +36,7 @@ def _enum_values(enum_cls: type[enum.Enum]) -> list[str]:
     return [str(member.value) for member in enum_cls]
 
 
-class UserCredentials(ControlPlaneBase):
+class UserCredentials(Base):
     """Credentials locaux d'un user global — une ligne par user, créée au besoin."""
 
     __tablename__ = "user_credentials"
@@ -57,7 +57,7 @@ class UserCredentials(ControlPlaneBase):
     )
 
 
-class RecoveryCode(ControlPlaneBase):
+class RecoveryCode(Base):
     """Codes de récupération TOTP : hachés, à usage unique."""
 
     __tablename__ = "auth_recovery_codes"
@@ -69,7 +69,7 @@ class RecoveryCode(ControlPlaneBase):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
-class AuthSession(ControlPlaneBase):
+class AuthSession(Base):
     """Session serveur (décision D1) : token opaque côté client, seul le hash ici."""
 
     __tablename__ = "sessions"
@@ -85,7 +85,7 @@ class AuthSession(ControlPlaneBase):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
 
-class LoginChallenge(ControlPlaneBase):
+class LoginChallenge(Base):
     """Jeton de login partiel : mot de passe validé, code TOTP attendu (5 min)."""
 
     __tablename__ = "login_challenges"
@@ -98,7 +98,7 @@ class LoginChallenge(ControlPlaneBase):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
-class OAuthIdentity(ControlPlaneBase):
+class OAuthIdentity(Base):
     """Lien user global ↔ identité OAuth (login social uniquement, pas les connecteurs)."""
 
     __tablename__ = "oauth_identities"
@@ -122,7 +122,7 @@ class OAuthIdentity(ControlPlaneBase):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
-class Invitation(ControlPlaneBase):
+class Invitation(Base):
     """Invitation à rejoindre un tenant — LA seule porte d'entrée (invariant n°5)."""
 
     __tablename__ = "invitations"

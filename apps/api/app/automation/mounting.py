@@ -5,8 +5,8 @@ ensuite ne touche que `app/modules/<name>/` + une ligne au registre + une migrat
 tenant (invariant de phase n°1).
 
 - `register_runtime()` : effets de bord idempotents partagés par l'API et le worker —
-  rattachement des permissions aux rôles (T2), enregistrement des actions d'audit et
-  des handlers d'événements connecteurs (Phase 5, D7).
+  rattachement des permissions aux rôles (T2) et des handlers d'événements
+  connecteurs (Phase 5, D7).
 - `mount_modules(app)` : monte chaque router sous `/api/v1/modules/{name}/…`, avec une
   dépendance `require_module_enabled(name)` sur TOUT le router (403 si le module n'est
   pas actif pour le tenant courant).
@@ -17,7 +17,6 @@ du worker (voir `app.automation.scheduler`).
 
 from fastapi import Depends, FastAPI
 
-from app.audit.service import register_module_actions, reset_module_actions
 from app.auth.permissions import register_module_permission, reset_module_permissions
 from app.automation.registry import MODULES, validate_registry
 from app.automation.service import require_module_enabled
@@ -28,12 +27,10 @@ def register_runtime() -> None:
     """Rattache permissions/actions/handlers des modules au socle (idempotent)."""
     validate_registry(MODULES)
     reset_module_permissions()
-    reset_module_actions()
     reset_event_handlers()
     for manifest in MODULES:
         for permission in manifest.permissions:
             register_module_permission(permission.name, permission.roles)
-        register_module_actions(manifest.audit_actions)
         for subscription in manifest.connector_events:
             on_connector_event(subscription.capability, subscription.handler)
 

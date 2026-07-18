@@ -14,7 +14,7 @@ from collections.abc import AsyncIterator
 
 from app.ai import gateway, quota
 from app.tenancy.context import TenantContext
-from app.tenancy.models import Tenant, TenantState
+from app.tenancy.models import Tenant
 
 
 def fake_usage(prompt: int, completion: int, cached: int = 0) -> object:
@@ -82,23 +82,9 @@ def reset_quota_valkey() -> None:
 
 
 def ctx_for(tenant: Tenant) -> TenantContext:
-    return TenantContext(
-        tenant_id=tenant.id,
-        slug=tenant.slug,
-        state=tenant.state,
-        db_name=tenant.db_name,
-        db_host=tenant.db_host,
-        role=None,
-    )
+    return TenantContext(tenant_id=tenant.id, slug=tenant.slug)
 
 
 def ctx_stub(tenant_id: uuid.UUID | None = None, slug: str = "acme") -> TenantContext:
-    """Contexte minimal pour les tests de quota purs (sans DB tenant réelle)."""
-    return TenantContext(
-        tenant_id=tenant_id or uuid.uuid4(),
-        slug=slug,
-        state=TenantState.ACTIVE,
-        db_name=f"{slug}_db",
-        db_host="default",
-        role=None,
-    )
+    """Contexte minimal pour les tests de quota purs (sans DB réelle)."""
+    return TenantContext(tenant_id=tenant_id or uuid.uuid4(), slug=slug)

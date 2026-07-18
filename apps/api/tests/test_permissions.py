@@ -1,6 +1,6 @@
 # TestClient (starlette/httpx) expose des membres partiellement typés.
 # pyright: reportUnknownMemberType=false, reportUnknownVariableType=false
-"""RBAC (Phase 2 T7) : matrice rôle x permission, dépendance unique, platform admin."""
+"""RBAC (Phase 2 T7) : matrice rôle x permission, dépendance unique."""
 
 from typing import Annotated
 
@@ -8,7 +8,6 @@ import pytest
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
-from app.auth.deps import require_platform_admin
 from app.auth.permissions import (
     PERMISSIONS,
     ROLE_ADMIN,
@@ -19,8 +18,6 @@ from app.auth.permissions import (
     validate_role,
 )
 from app.core.config import Settings
-from app.core.db import get_control_sessionmaker
-from app.directory.models import User
 from app.main import create_app
 from app.tenancy.provisioning import provision_tenant
 from tests.conftest import requires_postgres
@@ -148,36 +145,6 @@ async def test_admin_cannot_touch_owner_membership(db_env: Settings) -> None:
         assert demote.status_code == 400
         remove = client.delete(f"/api/v1/directory/members/{owner.id}", headers=host)
         assert remove.status_code == 400
-
-
-@requires_postgres
-async def test_require_platform_admin_dependency(db_env: Settings) -> None:
-    """Testée sans route publique (décision Phase 2 : back-office en Phase 3)."""
-    regular = await create_user("user@example.com")
-    regular_token = await create_session_token(regular.id)
-    admin = await create_user("root@example.com")
-    async with get_control_sessionmaker()() as session:
-        stored = await session.get(User, admin.id)
-        assert stored is not None
-        stored.is_platform_admin = True
-        await session.commit()
-    admin_token = await create_session_token(admin.id)
-    await reset_db_engines()
-
-    app = create_app()
-
-    @app.get("/test-platform-admin")
-    async def platform_only(  # pyright: ignore[reportUnusedFunction]
-        user: Annotated[User, Depends(require_platform_admin)],
-    ) -> dict[str, str]:
-        return {"email": user.email}
-
-    with TestClient(app) as client:
-        assert client.get("/test-platform-admin").status_code == 401
-        client.cookies.set(db_env.session_cookie_name, regular_token)
-        assert client.get("/test-platform-admin").status_code == 403
-        client.cookies.set(db_env.session_cookie_name, admin_token)
-        assert client.get("/test-platform-admin").status_code == 200
 
 
 def test_permission_app_smoke() -> None:

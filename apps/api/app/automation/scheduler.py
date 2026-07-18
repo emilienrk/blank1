@@ -27,7 +27,6 @@ from app.automation.service import enabled_tenant_ids
 from app.connectors import throttle
 from app.core.db import dispose_control_engine, get_control_sessionmaker
 from app.tenancy.context import TenantContext, tenant_context
-from app.tenancy.engine_manager import dispose_engine_manager
 from app.tenancy.models import Tenant, TenantState
 
 logger = structlog.get_logger()
@@ -46,15 +45,14 @@ def _find_task(module_name: str, task_name: str) -> PeriodicTaskSpec | None:
 async def _active_tenant(tenant_id: uuid.UUID) -> Tenant | None:
     async with get_control_sessionmaker()() as session:
         tenant = await session.get(Tenant, tenant_id)
-        if tenant is None or tenant.state is not TenantState.ACTIVE:
+        if tenant is None or tenant.state is not TenantState.ACTIVE or tenant.deleted_at:
             return None
         return tenant
 
 
 async def _dispose_engines() -> None:
-    # Pools asyncpg liés à leur event loop (cf. app/gdpr/tasks.py, connectors).
+    # Pools asyncpg liés à leur event loop (cf. connectors/tasks.py).
     await dispose_control_engine()
-    await dispose_engine_manager()
 
 
 def _lock_name(module_name: str, task_name: str, tenant_id: uuid.UUID) -> str:
@@ -102,14 +100,7 @@ async def run_periodic_unit(module_name: str, task_name: str, tenant_id: uuid.UU
         logger.info("module_periodic_skipped_locked", module=module_name, task=task_name)
         return False
 
-    ctx = TenantContext(
-        tenant_id=tenant.id,
-        slug=tenant.slug,
-        state=tenant.state,
-        db_name=tenant.db_name,
-        db_host=tenant.db_host,
-        role=None,
-    )
+    ctx = TenantContext(tenant_id=tenant.id, slug=tenant.slug)
     with tenant_context(ctx):
         structlog.contextvars.bind_contextvars(tenant=ctx.slug, module=module_name)
         try:

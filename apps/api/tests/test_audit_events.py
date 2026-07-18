@@ -28,9 +28,6 @@ async def _audit_actions(tenant: object) -> list[str]:
     ctx = TenantContext(
         tenant_id=tenant.id,  # type: ignore[attr-defined]
         slug=tenant.slug,  # type: ignore[attr-defined]
-        state=tenant.state,  # type: ignore[attr-defined]
-        db_name=tenant.db_name,  # type: ignore[attr-defined]
-        db_host=tenant.db_host,  # type: ignore[attr-defined]
     )
     with tenant_context(ctx):
         async for session in get_tenant_session():

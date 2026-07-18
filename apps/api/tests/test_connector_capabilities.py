@@ -28,8 +28,8 @@ from app.connectors.tenant_models import (
 )
 from app.core.config import Settings
 from app.tenancy.context import tenant_context
-from app.tenancy.engine_manager import get_engine_manager
 from app.tenancy.provisioning import provision_tenant
+from app.tenancy.session import tenant_session
 from tests.conftest import requires_postgres
 from tests.connector_helpers import (
     GOOGLE_SCOPES,
@@ -112,7 +112,7 @@ async def test_get_capability_returns_provider_implementation(db_env: Settings) 
     await reset_db_engines()
 
     with tenant_context(ctx_for(tenant)):
-        async with get_engine_manager().session(ctx_for(tenant)) as session:
+        async with tenant_session() as session:
             loaded = await session.get(ConnectorConnection, connection.id)
             assert loaded is not None
             mail = get_capability(session, loaded, MailCapability)
@@ -132,7 +132,7 @@ async def test_get_capability_rejects_unconsented_capability(db_env: Settings) -
     await reset_db_engines()
 
     with tenant_context(ctx_for(tenant)):
-        async with get_engine_manager().session(ctx_for(tenant)) as session:
+        async with tenant_session() as session:
             loaded = await session.get(ConnectorConnection, connection.id)
             assert loaded is not None
             assert granted_capabilities(loaded) == frozenset({"mail"})
@@ -146,7 +146,7 @@ async def test_get_capability_rejects_non_active_connection(db_env: Settings) ->
     await reset_db_engines()
 
     with tenant_context(ctx_for(tenant)):
-        async with get_engine_manager().session(ctx_for(tenant)) as session:
+        async with tenant_session() as session:
             loaded = await session.get(ConnectorConnection, connection.id)
             assert loaded is not None
             with pytest.raises(CapabilityError, match="non active"):
@@ -173,7 +173,7 @@ async def test_microsoft_mail_list_messages_through_capability(
 
     try:
         with override_provider(fake_microsoft_manifest()), tenant_context(ctx_for(tenant)):
-            async with get_engine_manager().session(ctx_for(tenant)) as session:
+            async with tenant_session() as session:
                 loaded = await session.get(ConnectorConnection, connection.id)
                 assert loaded is not None
                 mail = get_capability(session, loaded, MailCapability)

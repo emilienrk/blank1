@@ -29,8 +29,8 @@ from app.core.config import Settings
 from app.core.db import get_control_sessionmaker
 from app.main import create_app
 from app.tenancy.context import tenant_context
-from app.tenancy.engine_manager import get_engine_manager
 from app.tenancy.provisioning import provision_tenant
+from app.tenancy.session import tenant_session
 from tests.conftest import requires_postgres
 from tests.connector_helpers import (
     create_connection,
@@ -71,7 +71,7 @@ async def _add_subscription(
     expires_at: datetime | None = None,
 ) -> uuid.UUID:
     with tenant_context(ctx_for(tenant)):  # type: ignore[arg-type]
-        async with get_engine_manager().session(ctx_for(tenant)) as session:  # type: ignore[arg-type]
+        async with tenant_session() as session:  # type: ignore[arg-type]
             subscription = ConnectorSubscription(
                 connection_id=connection_id,
                 capability=capability,
@@ -219,7 +219,7 @@ async def test_subscription_renewed_before_expiration(
             report = await renew_expiring_subscriptions()
         assert report["acme"]["renewed"] == 1
         with tenant_context(ctx_for(tenant)):
-            async with get_engine_manager().session(ctx_for(tenant)) as session:
+            async with tenant_session() as session:
                 subscription = await session.get(ConnectorSubscription, subscription_id)
                 assert subscription is not None
                 # Nouvelle expiration repoussée bien au-delà d'1h.
@@ -265,7 +265,7 @@ async def test_process_event_audits_and_invokes_registered_handler(
     reloaded = await load_connection(tenant, connection.id)
     assert reloaded.health_checked_at is not None
     with tenant_context(ctx_for(tenant)):
-        async with get_engine_manager().session(ctx_for(tenant)) as session:
+        async with tenant_session() as session:
             from app.audit.tenant_models import AuditEvent
 
             actions = [e.action for e in (await session.scalars(select(AuditEvent))).all()]

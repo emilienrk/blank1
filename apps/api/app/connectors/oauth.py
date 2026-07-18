@@ -38,8 +38,8 @@ from app.connectors.tenant_models import (
 from app.core.config import Settings, get_settings
 from app.core.db import get_control_session
 from app.tenancy.context import TenantContext, tenant_context
-from app.tenancy.engine_manager import get_engine_manager
 from app.tenancy.models import Tenant, TenantState
+from app.tenancy.session import tenant_session
 
 logger = structlog.get_logger()
 
@@ -239,7 +239,7 @@ async def connector_oauth_callback(
         return RedirectResponse(f"{connectors_page}?error=denied", status_code=303)
 
     tenant = await control_session.scalar(select(Tenant).where(Tenant.slug == str(payload["t"])))
-    if tenant is None or tenant.state is not TenantState.ACTIVE:
+    if tenant is None or tenant.state is not TenantState.ACTIVE or tenant.deleted_at:
         raise HTTPException(status_code=400, detail="Tenant introuvable ou inactif")
 
     manifest = get_provider(provider)
@@ -260,19 +260,12 @@ async def connector_oauth_callback(
 
     granted_scopes = bundle.scopes or manifest.scopes_for(capabilities)
 
-    ctx = TenantContext(
-        tenant_id=tenant.id,
-        slug=tenant.slug,
-        state=tenant.state,
-        db_name=tenant.db_name,
-        db_host=tenant.db_host,
-        role=None,
-    )
+    ctx = TenantContext(tenant_id=tenant.id, slug=tenant.slug)
     with tenant_context(ctx):
-        async with get_engine_manager().session(ctx) as tenant_session:
+        async with tenant_session() as scoped_session:
             try:
                 connection = await _upsert_connection(
-                    tenant_session,
+                    scoped_session,
                     provider=provider,
                     kind=kind,
                     user_id=user_id if kind is ConnectionKind.USER else None,
@@ -284,7 +277,7 @@ async def connector_oauth_callback(
             except service.MissingRefreshTokenError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
             await record_audit_event(
-                tenant_session,
+                scoped_session,
                 action="connector.connected",
                 resource_type="connector_connection",
                 resource_id=str(connection.id),
@@ -297,7 +290,7 @@ async def connector_oauth_callback(
                 actor_user_id=user_id,
                 actor_label=account_label,
             )
-            await tenant_session.commit()
+            await scoped_session.commit()
             connection_id = connection.id
 
     await _ensure_webhook_route(

@@ -5,18 +5,15 @@ depuis les tests async (le thread n'a pas de boucle en cours).
 """
 
 import asyncio
-from pathlib import Path
 
-import pytest
 from sqlalchemy import select
 from typer.testing import CliRunner
 
 from app.cli import app
-from app.core.config import Settings, get_settings
+from app.core.config import Settings
 from app.core.db import get_control_sessionmaker
-from app.directory.models import User
 from app.tenancy.models import Tenant, TenantState
-from tests.conftest import TENANT_HEAD_REVISION, requires_postgres
+from tests.conftest import requires_postgres
 from tests.helpers import reset_db_engines
 
 pytestmark = requires_postgres
@@ -38,11 +35,10 @@ async def test_cli_tenant_create_list_upgrade(db_env: Settings) -> None:
     assert code == 0
     assert "acme" in output
     assert "active" in output
-    assert TENANT_HEAD_REVISION in output
 
     code, output = await _invoke("db", "upgrade")
     assert code == 0, output
-    assert "2/2 base(s) migrée(s)" in output
+    assert "Base migrée" in output
 
 
 async def test_cli_create_duplicate_fails(db_env: Settings) -> None:
@@ -68,40 +64,6 @@ async def test_cli_tenant_create_with_owner_email_prints_accept_url(db_env: Sett
     assert "/accept-invitation?token=" in output
 
 
-async def test_cli_admin_grant_revoke(db_env: Settings) -> None:
-    # Le grant exige un compte existant (décision D5 : jamais via l'API, CLI only).
-    async with get_control_sessionmaker()() as session:
-        session.add(User(email="carol@example.com"))
-        await session.commit()
-    await reset_db_engines()  # bascule loop pytest -> loop du CLI (run_async)
-
-    code, output = await _invoke("admin", "grant", "carol@example.com")
-    assert code == 0, output
-    assert "platform_admin" in output
-
-    async with get_control_sessionmaker()() as session:
-        carol = await session.scalar(select(User).where(User.email == "carol@example.com"))
-        assert carol is not None
-        assert carol.is_platform_admin is True
-    await reset_db_engines()
-
-    # Idempotent.
-    code, output = await _invoke("admin", "grant", "carol@example.com")
-    assert code == 0, output
-
-    code, output = await _invoke("admin", "revoke", "carol@example.com")
-    assert code == 0, output
-    async with get_control_sessionmaker()() as session:
-        carol = await session.scalar(select(User).where(User.email == "carol@example.com"))
-        assert carol is not None
-        assert carol.is_platform_admin is False
-    await reset_db_engines()
-
-    code, output = await _invoke("admin", "grant", "ghost@example.com")
-    assert code == 1
-    assert "ERREUR" in output
-
-
 async def test_cli_invitation_create(db_env: Settings) -> None:
     code, _ = await _invoke("tenant", "create", "acme")
     assert code == 0
@@ -123,26 +85,7 @@ async def test_cli_invitation_create(db_env: Settings) -> None:
     assert "ERREUR" in output
 
 
-async def test_cli_tenant_export(
-    db_env: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("GDPR_EXPORT_DIR", str(tmp_path / "exports"))
-    get_settings.cache_clear()
-
-    code, _ = await _invoke("tenant", "create", "acme")
-    assert code == 0
-
-    code, output = await _invoke("tenant", "export", "acme")
-    assert code == 0, output
-    assert "Export prêt" in output
-    assert next((tmp_path / "exports").glob("export_acme_*.tar.enc")).exists()
-
-    code, output = await _invoke("tenant", "export", "nexiste-pas")
-    assert code == 1
-    assert "ERREUR" in output
-
-
-async def test_cli_tenant_delete_requires_slug_confirmation(db_env: Settings) -> None:
+async def test_cli_tenant_delete_soft_deletes_after_slug_confirmation(db_env: Settings) -> None:
     code, _ = await _invoke("tenant", "create", "acme")
     assert code == 0
 
@@ -153,34 +96,23 @@ async def test_cli_tenant_delete_requires_slug_confirmation(db_env: Settings) ->
     async with get_control_sessionmaker()() as session:
         tenant = await session.scalar(select(Tenant).where(Tenant.slug == "acme"))
         assert tenant is not None
-        assert tenant.state is TenantState.ACTIVE
+        assert tenant.deleted_at is None
     await reset_db_engines()
 
     code, output = await _invoke("tenant", "delete", "acme", input_text="acme\n")
     assert code == 0, output
-    assert "Effacement demandé" in output
+    assert "soft-delete" in output
     async with get_control_sessionmaker()() as session:
         tenant = await session.scalar(select(Tenant).where(Tenant.slug == "acme"))
         assert tenant is not None
-        assert tenant.state is TenantState.PENDING_DELETION
+        assert tenant.deleted_at is not None
+        assert tenant.state is TenantState.ACTIVE  # l'état ne change pas, seul deleted_at
     await reset_db_engines()
 
-
-async def test_cli_tenant_cancel_delete(db_env: Settings) -> None:
-    code, _ = await _invoke("tenant", "create", "acme")
-    assert code == 0
-    code, _ = await _invoke("tenant", "delete", "acme", input_text="acme\n")
-    assert code == 0
-
-    code, output = await _invoke("tenant", "cancel-delete", "acme")
-    assert code == 0, output
-    assert "de nouveau actif" in output
-    async with get_control_sessionmaker()() as session:
-        tenant = await session.scalar(select(Tenant).where(Tenant.slug == "acme"))
-        assert tenant is not None
-        assert tenant.state is TenantState.ACTIVE
-    await reset_db_engines()
-
-    code, output = await _invoke("tenant", "cancel-delete", "nexiste-pas")
+    # Déjà supprimé → erreur explicite ; tenant inconnu → erreur aussi.
+    code, output = await _invoke("tenant", "delete", "acme", input_text="acme\n")
+    assert code == 1
+    assert "déjà supprimé" in output
+    code, output = await _invoke("tenant", "delete", "nexiste-pas", input_text="nexiste-pas\n")
     assert code == 1
     assert "ERREUR" in output

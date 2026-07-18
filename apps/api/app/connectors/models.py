@@ -14,10 +14,10 @@ from datetime import datetime
 from sqlalchemy import DateTime, ForeignKey, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.db import ControlPlaneBase
+from app.core.db import Base
 
 
-class WebhookRoute(ControlPlaneBase):
+class WebhookRoute(Base):
     __tablename__ = "webhook_routes"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
