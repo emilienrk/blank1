@@ -56,7 +56,6 @@ celery_app.conf.update(
 )
 
 # Les tâches déclarées par module (@shared_task) se rattachent à l'app par import.
-import app.admin.tasks  # noqa: E402  # pyright: ignore[reportUnusedImport]
 import app.ai.tasks  # noqa: E402  # pyright: ignore[reportUnusedImport]
 import app.auth.tasks  # noqa: E402  # pyright: ignore[reportUnusedImport]
 import app.automation.scheduler  # noqa: E402  # pyright: ignore[reportUnusedImport]

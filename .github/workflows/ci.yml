@@ -49,15 +49,11 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter web lint
-      - run: pnpm --filter admin lint
       - run: pnpm --filter web typecheck
-      - run: pnpm --filter admin typecheck
       - run: pnpm --filter @app/api-client typecheck
       - run: pnpm --filter @app/ui typecheck
       - run: pnpm --filter web test
-      - run: pnpm --filter admin test
       - run: pnpm --filter web build
-      - run: pnpm --filter admin build
 
   contract:
     name: Dérive du client TS (OpenAPI = source de vérité)
@@ -95,10 +91,4 @@ jobs:
         with:
           context: .
           file: apps/web/Dockerfile
-          push: false
-      - name: Image admin (back-office SPA + Caddy)
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: apps/admin/Dockerfile
           push: false

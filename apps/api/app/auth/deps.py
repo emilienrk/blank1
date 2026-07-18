@@ -1,9 +1,7 @@
 """Dépendances FastAPI d'authentification (Phase 2 T4/T7).
 
 `current_auth` lit le cookie de session, valide la session serveur et fournit
-user + session. `require_platform_admin` existe et est testée mais AUCUNE route
-publique ne l'expose — le back-office arrive en Phase 3 (même logique que la
-décision D5 de la Phase 1).
+user + session.
 """
 
 from dataclasses import dataclass
@@ -49,11 +47,4 @@ async def current_auth(
 
 
 async def current_user(auth: Annotated[CurrentAuth, Depends(current_auth)]) -> User:
-    return auth.user
-
-
-async def require_platform_admin(auth: Annotated[CurrentAuth, Depends(current_auth)]) -> User:
-    """Rôle plateforme (§4) — réservé au back-office Phase 3, aucune route publique."""
-    if not auth.user.is_platform_admin:
-        raise HTTPException(status_code=403, detail="Réservé aux administrateurs plateforme")
     return auth.user

@@ -1,3 +1,0 @@
-@import "tailwindcss";
-/* Les packages du workspace hors de apps/admin doivent être déclarés comme sources */
-@source "../../../packages/ui/src";

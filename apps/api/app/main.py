@@ -1,6 +1,5 @@
 from fastapi import FastAPI
 
-from app.admin.router import router as admin_router
 from app.ai.router import router as ai_router
 from app.audit.router import router as audit_router
 from app.auth.router import router as auth_router
@@ -16,9 +15,9 @@ from app.health.router import router as health_router
 
 def create_app() -> FastAPI:
     # Construit et enregistre l'app Celery configurée (broker Valkey) comme app « courante » :
-    # indispensable pour que `run_migrations_task.delay(...)` (T6, décision D6) parte sur le
-    # bon broker — sans cet import, `@shared_task` retombe sur l'app Celery par défaut (non
-    # configurée) dans CE process API (le process worker l'importe déjà de son côté).
+    # indispensable pour que les `.delay(...)` émis depuis l'API (webhooks connecteurs,
+    # dispatch de modules) partent sur le bon broker — sans cet import, `@shared_task`
+    # retombe sur l'app Celery par défaut (non configurée) dans CE process API.
     import app.worker  # pyright: ignore[reportUnusedImport]
 
     settings = get_settings()
@@ -41,7 +40,6 @@ def create_app() -> FastAPI:
     # OAuth tiers + webhooks providers.
     app.include_router(connectors_oauth_router, prefix="/api/v1")
     app.include_router(webhooks_router, prefix="/api/v1")
-    app.include_router(admin_router, prefix="/api/v1")
 
     # Montage des modules métier (Phase 7) : routes sous /api/v1/modules/{name}/…,
     # permissions rattachées aux rôles, handlers d'événements connecteurs. DERNIÈRE

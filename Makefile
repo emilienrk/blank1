@@ -1,16 +1,16 @@
 # Point d'entrée unique : humains, CI et assistants IA passent par ces cibles.
 
-.PHONY: install dev infra api web admin worker lint format typecheck test openapi generate-client build smoke migrate revision-controlplane revision-tenant
+.PHONY: install dev infra api web worker lint format typecheck test openapi generate-client build smoke migrate revision-controlplane revision-tenant
 
 install: ## Installe toutes les dépendances (Python + Node)
 	uv sync --all-packages
 	pnpm install
 
-infra: ## Démarre les services d'infrastructure (Postgres, Valkey, Loki, Grafana, Alloy, Uptime Kuma)
-	docker compose up -d postgres valkey loki grafana alloy uptime-kuma
+infra: ## Démarre les services d'infrastructure (Postgres, Valkey)
+	docker compose up -d postgres valkey
 
 dev: infra ## Infra + rappel des commandes de dev
-	@echo "Infra démarrée. Dans des terminaux séparés : 'make api', 'make worker', 'make web', 'make admin'."
+	@echo "Infra démarrée. Dans des terminaux séparés : 'make api', 'make worker', 'make web'."
 
 api: ## Lance l'API en mode rechargement
 	uv run uvicorn app.main:app --reload --app-dir apps/api --port 8000
@@ -21,14 +21,10 @@ worker: ## Lance le worker Celery
 web: ## Lance la SPA client en mode dev (proxy /api -> localhost:8000)
 	pnpm --filter web dev
 
-admin: ## Lance la SPA back-office en mode dev (jamais exposée publiquement, T8)
-	pnpm --filter admin dev
-
 lint:
 	uv run ruff check .
 	uv run ruff format --check .
 	pnpm --filter web lint
-	pnpm --filter admin lint
 
 format:
 	uv run ruff check --fix .
@@ -37,14 +33,12 @@ format:
 typecheck:
 	uv run pyright
 	pnpm --filter web typecheck
-	pnpm --filter admin typecheck
 	pnpm --filter @app/api-client typecheck
 	pnpm --filter @app/ui typecheck
 
 test:
 	uv run pytest
 	pnpm --filter web test
-	pnpm --filter admin test
 
 migrate: ## Migre le control-plane + toutes les bases tenant (rapport par base)
 	uv run saas db upgrade
@@ -61,7 +55,7 @@ openapi: ## Exporte openapi.json depuis l'app FastAPI (sans serveur)
 generate-client: openapi ## Régénère packages/api-client depuis le contrat OpenAPI
 	pnpm --filter @app/api-client generate
 
-build: ## Construit les images Docker (api+worker : une seule image ; web/admin : statiques + Caddy)
+build: ## Construit les images Docker (api+worker : une seule image ; web : statiques + Caddy)
 	docker compose build
 
 smoke: ## Vérifie le health à travers Caddy (SMOKE_URL surchargable, ex. https://staging.exemple.fr)
