@@ -1,16 +1,16 @@
 # Procédure de notification de violation de données (trame)
 
 > Trame opérationnelle — à faire relire par un juriste avant les premiers
-> clients réels (voir `docs/phase-4-audit-rgpd-plan.md` §F5). L'obligation
+> clients réels. L'obligation
 > légale est une notification à l'autorité de contrôle **sous 72 heures**
 > après constat (article 33 RGPD), et aux personnes concernées « dans les
 > meilleurs délais » si le risque est élevé (article 34).
 
 ## 1. Détection
 
-Sources possibles : alerte Uptime Kuma (indisponibilité anormale), anomalie
-dans les logs techniques (Loki/Grafana — accès admin uniquement), alerte d'un
-tenant, scan de dépendances CI (Phase 8), signalement externe.
+Sources possibles : échec du smoke test (`make smoke`), anomalie dans les
+logs techniques (`docker compose logs`, ADR 0004), alerte d'un tenant,
+signalement externe.
 
 ## 2. Qualification (dans l'heure suivant la détection)
 
@@ -23,8 +23,9 @@ Réunir l'équipe technique disponible et répondre à :
 4. L'incident est-il en cours (à contenir) ou terminé ?
 
 **Action immédiate si en cours** : révoquer les sessions/tokens concernés
-(`app.auth`), suspendre le ou les tenants affectés si nécessaire
-(`saas admin` / back-office), couper l'accès compromis.
+(`app.auth`), rendre inaccessibles le ou les tenants affectés si nécessaire
+(soft-delete `saas tenant delete`, réversible par SQL — ADR 0002), couper
+l'accès compromis.
 
 ## 3. Décision de notification (dans les 24h suivant la détection)
 
@@ -69,5 +70,5 @@ Réunir l'équipe technique disponible et répondre à :
 
 Une fois l'incident clos : documenter la chronologie, la cause racine, les
 actions correctives, et mettre à jour cette procédure si nécessaire — le
-journal d'audit (`app.audit`) et les logs techniques (Loki) sont les deux
-sources factuelles à croiser pour la chronologie.
+journal d'audit (`app.audit`) et les logs techniques (`docker compose logs`)
+sont les deux sources factuelles à croiser pour la chronologie.

@@ -1,8 +1,9 @@
 # Socle SaaS B2B multi-tenant — conventions du monorepo
 
 Architecture simplifiée MVP (juillet 2026) : voir `docs/adr/` (décisions + procédure de
-réintroduction) et le tag `archive/pre-mvp-simplification` (état complet d'avant).
-Plans de phase historiques : `docs/architecture-plan.md` et `docs/phase-*.md`.
+réintroduction) et le tag `archive/pre-mvp-simplification` (état complet d'avant, y
+compris les plans de phase historiques — voir `docs/archive/README.md`).
+Documentation d'architecture pour les humains : `docs/README.md`.
 
 ## Carte du repo
 

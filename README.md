@@ -5,9 +5,9 @@ multi-fournisseurs) pour des modules d'automatisation métier.
 
 Architecture **simplifiée MVP** (juillet 2026) : base unique + `tenant_id`, pas de
 back-office ni de stack d'observabilité — décisions et procédures de réintroduction
-dans [`docs/adr/`](docs/adr/), état complet d'avant sous le tag git
-`archive/pre-mvp-simplification`. Plans de phase historiques :
-[architecture globale](docs/architecture-plan.md) · `docs/phase-*.md`.
+dans [`docs/adr/`](docs/adr/), état complet d'avant (plans de phase inclus) sous le
+tag git `archive/pre-mvp-simplification`. Documentation d'architecture :
+[`docs/`](docs/README.md).
 
 ## Stack
 
