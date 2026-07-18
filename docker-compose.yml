@@ -42,10 +42,6 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-app}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
       POSTGRES_DB: ${POSTGRES_DB:-controlplane}
-      GDPR_EXPORT_DIR: /var/lib/saas/gdpr-exports
-    volumes:
-      # Exports RGPD chiffrés (Phase 4 T4) : volume dédié, hors image, TTL applicatif.
-      - gdpr_exports:/var/lib/saas/gdpr-exports
     depends_on:
       valkey:
         condition: service_started
@@ -57,17 +53,14 @@ services:
     image: ${API_IMAGE:-saas-api:local}
     command: ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=INFO"]
     environment: *app_env
-    volumes:
-      # Le worker exécute pg_dump/purge : même volume que l'api (Phase 4 T4).
-      - gdpr_exports:/var/lib/saas/gdpr-exports
     depends_on:
       valkey:
         condition: service_started
       postgres:
         condition: service_healthy
 
-  # Même image encore : le scheduler des tâches périodiques (purge auth Phase 2,
-  # rétention/effacements/purge exports RGPD Phase 4 — `app.worker.celery_app.beat_schedule`).
+  # Même image encore : le scheduler des tâches périodiques (purge auth, refresh
+  # connecteurs, rollup IA — `app.worker.celery_app.beat_schedule`).
   # Processus séparé du worker (recommandation Celery : jamais beat+worker en un seul process).
   beat:
     image: ${API_IMAGE:-saas-api:local}
@@ -100,4 +93,3 @@ volumes:
   valkey_data:
   caddy_data:
   caddy_config:
-  gdpr_exports:

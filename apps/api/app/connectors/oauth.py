@@ -239,7 +239,7 @@ async def connector_oauth_callback(
         return RedirectResponse(f"{connectors_page}?error=denied", status_code=303)
 
     tenant = await control_session.scalar(select(Tenant).where(Tenant.slug == str(payload["t"])))
-    if tenant is None or tenant.state is not TenantState.ACTIVE:
+    if tenant is None or tenant.state is not TenantState.ACTIVE or tenant.deleted_at:
         raise HTTPException(status_code=400, detail="Tenant introuvable ou inactif")
 
     manifest = get_provider(provider)

@@ -1,11 +1,10 @@
 """Journal d'audit applicatif — donnée du client, en DB TENANT (plan global §7,
 Phase 4 T1).
 
-Append-only : aucune colonne modifiable après insertion, aucune route de
-modification/suppression en dehors de la politique de rétention (`app.gdpr.retention`,
-T6). `actor_label` est figé au moment du fait (décision D3) : les users vivent en
-control-plane et peuvent changer d'email ou disparaître (effacement d'un autre
-tenant) — le journal doit rester lisible tel quel, sans jointure inter-bases.
+Append-only par design : aucune colonne modifiable après insertion, aucune route de
+modification/suppression. `actor_label` est figé au moment du fait (décision D3) :
+les users vivent en control-plane et peuvent changer d'email ou disparaître — le
+journal doit rester lisible tel quel, sans jointure.
 """
 
 import uuid

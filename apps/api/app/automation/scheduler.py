@@ -46,13 +46,13 @@ def _find_task(module_name: str, task_name: str) -> PeriodicTaskSpec | None:
 async def _active_tenant(tenant_id: uuid.UUID) -> Tenant | None:
     async with get_control_sessionmaker()() as session:
         tenant = await session.get(Tenant, tenant_id)
-        if tenant is None or tenant.state is not TenantState.ACTIVE:
+        if tenant is None or tenant.state is not TenantState.ACTIVE or tenant.deleted_at:
             return None
         return tenant
 
 
 async def _dispose_engines() -> None:
-    # Pools asyncpg liés à leur event loop (cf. app/gdpr/tasks.py, connectors).
+    # Pools asyncpg liés à leur event loop (cf. connectors/tasks.py).
     await dispose_control_engine()
     await dispose_engine_manager()
 

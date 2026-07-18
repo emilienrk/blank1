@@ -25,10 +25,6 @@ class TenantState(enum.StrEnum):
     ACTIVE = "active"
     SUSPENDED = "suspended"
     FAILED = "failed"
-    # Effacement RGPD demandé (Phase 4 T5, décision D2) : le tenant est déjà
-    # inaccessible (`resolve_tenant` refuse comme `suspended`) pendant le délai de
-    # grâce ; `execute_pending_erasures` droppe la base à son échéance.
-    PENDING_DELETION = "pending_deletion"
 
 
 def _enum_values(enum_cls: type[enum.Enum]) -> list[str]:
@@ -56,10 +52,9 @@ class Tenant(ControlPlaneBase):
     )
     # Préparation facturation (plan global §2) : rien d'autre que ce champ.
     plan: Mapped[str] = mapped_column(String(50), default="standard", server_default="standard")
-    # Horodatage de la demande d'effacement RGPD (Phase 4 T5) — null hors PENDING_DELETION.
-    deletion_requested_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), default=None
-    )
+    # Soft-delete (ADR 0002) : un tenant marqué ici est invisible partout (résolution
+    # HTTP, fan-out beat, webhooks) mais ses données restent en base.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

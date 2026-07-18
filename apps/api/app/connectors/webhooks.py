@@ -163,7 +163,7 @@ async def receive_webhook(
     if route is None:
         return _neutral_response()
     tenant = await control_session.get(Tenant, route.tenant_id)
-    if tenant is None or tenant.state is not TenantState.ACTIVE:
+    if tenant is None or tenant.state is not TenantState.ACTIVE or tenant.deleted_at:
         return _neutral_response()
 
     ctx = TenantContext(

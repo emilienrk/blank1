@@ -1,6 +1,7 @@
 # TestClient (starlette/httpx) expose des membres partiellement typés.
 # pyright: reportUnknownMemberType=false, reportUnknownVariableType=false
 import uuid
+from datetime import UTC, datetime
 from typing import Annotated
 
 import pytest
@@ -107,6 +108,13 @@ async def test_resolve_tenant_from_subdomain(db_env: Settings) -> None:
                     db_name="broken_db_nonexistent",
                     state=TenantState.FAILED,
                 ),
+                Tenant(
+                    slug="gone",
+                    name="Gone",
+                    db_name="gone_db_nonexistent",
+                    state=TenantState.ACTIVE,
+                    deleted_at=datetime.now(UTC),
+                ),
             ]
         )
         await session.commit()
@@ -148,6 +156,10 @@ async def test_resolve_tenant_from_subdomain(db_env: Settings) -> None:
 
         failed = client.get("/whoami", headers={"host": "broken.app.example.fr"})
         assert failed.status_code == 404
+
+        # Soft-delete (ADR 0002) : indistinguable d'un tenant inexistant.
+        deleted = client.get("/whoami", headers={"host": "gone.app.example.fr"})
+        assert deleted.status_code == 404
 
         no_subdomain = client.get("/whoami", headers={"host": "localhost"})
         assert no_subdomain.status_code == 404

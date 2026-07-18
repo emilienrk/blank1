@@ -5,8 +5,7 @@
 - Traitement des événements webhook (dispatchés par la route de réception) ;
 - Création des subscriptions post-connexion (dispatchée par le callback OAuth).
 
-Toutes posent explicitement le contexte tenant (invariant racine n°1) — même
-pattern que `app.gdpr.tasks`.
+Toutes posent explicitement le contexte tenant (invariant racine n°1).
 """
 
 # Celery n'expose pas de types (voir app/worker.py).
@@ -57,14 +56,16 @@ async def _active_tenants() -> list[Tenant]:
         return list(
             (
                 await control_session.scalars(
-                    select(Tenant).where(Tenant.state == TenantState.ACTIVE)
+                    select(Tenant).where(
+                        Tenant.state == TenantState.ACTIVE, Tenant.deleted_at.is_(None)
+                    )
                 )
             ).all()
         )
 
 
 async def _dispose_engines() -> None:
-    # Pools asyncpg liés à leur event loop (cf. app/gdpr/tasks.py).
+    # Pools asyncpg liés à leur event loop.
     await dispose_control_engine()
     await dispose_engine_manager()
 

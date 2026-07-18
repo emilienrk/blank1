@@ -16,60 +16,11 @@ from app.tenancy.context import TenantContext
 from app.tenancy.engine_manager import get_engine_manager
 from app.tenancy.models import Tenant
 
-# Registre typé des actions connues (namespaces `core.*` pour le socle,
-# `connector.*` pour la Phase 5). Les actions de modules (`<module>.…`) sont
-# enregistrées dynamiquement via `register_module_actions` (Phase 7) — appelé par
-# le montage du runtime, jamais par un module directement.
-ACTIONS: frozenset[str] = frozenset(
-    {
-        "core.tenant.provisioned",
-        "connector.connected",
-        "connector.reconsent_required",
-        "connector.revoked",
-        "connector.subscription_renewal_failed",
-        "connector.event_received",
-        "core.member.invited",
-        "core.member.invitation_revoked",
-        "core.member.invitation_accepted",
-        "core.member.role_changed",
-        "core.member.removed",
-        "core.team.created",
-        "core.team.deleted",
-        "core.team.member_added",
-        "core.team.member_removed",
-        "core.ai.policy_changed",
-        "core.ai.quota_exceeded",
-        # Gouvernance des modules (Phase 7 T3) : activation/désactivation par tenant.
-        "core.module.enabled",
-        "core.module.disabled",
-    }
-)
-
-# Actions de modules enregistrées dynamiquement (Phase 7) — additif au registre du
-# socle, jamais une modification de `ACTIONS`. Réinitialisable en test.
-_module_actions: set[str] = set()
-
+# L'action est une string namespacée par convention : `core.*` pour le socle,
+# `connector.*` pour les connecteurs, `<module>.*` pour les modules (le registre
+# des modules valide ce namespace au démarrage, `app.automation.registry`).
 SYSTEM_ACTOR_LABEL = "system"
 CLI_ACTOR_LABEL = "cli"
-
-
-def register_module_actions(actions: "frozenset[str] | set[str] | tuple[str, ...]") -> None:
-    """Enregistre les actions d'audit d'un module (T2). Toutes namespacées
-    `<module>.…` (jamais `core.*`, réservé au socle)."""
-    for action in actions:
-        if action.startswith("core."):
-            msg = f"Action de module interdite dans le namespace `core.*` : {action!r}"
-            raise ValueError(msg)
-        _module_actions.add(action)
-
-
-def reset_module_actions() -> None:
-    """Réinitialise les actions de modules (montage idempotent + tests)."""
-    _module_actions.clear()
-
-
-def _is_known_action(action: str) -> bool:
-    return action in ACTIONS or action in _module_actions
 
 
 async def record_audit_event(
@@ -84,9 +35,6 @@ async def record_audit_event(
 ) -> AuditEvent:
     """Écrit un événement d'audit sur la session tenant courante (même transaction
     que l'action auditée — l'appelant est responsable du commit, décision D1)."""
-    if not _is_known_action(action):
-        msg = f"Action d'audit inconnue du registre : {action!r}"
-        raise ValueError(msg)
     event = AuditEvent(
         actor_user_id=actor_user_id,
         actor_label=actor_label,

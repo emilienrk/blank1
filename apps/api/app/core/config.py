@@ -96,12 +96,6 @@ class Settings(BaseSettings):
     # Rétention des événements bruts d'usage (jours) ; les agrégats sont conservés.
     ai_usage_raw_retention_days: int = 90
 
-    # --- Audit + RGPD (Phase 4) ---
-    audit_retention_days: int = 365
-    gdpr_export_dir: str = "/var/lib/saas/gdpr-exports"
-    gdpr_export_ttl_days: int = 7
-    gdpr_erasure_grace_days: int = 7
-
     def master_key_bytes(self) -> bytes:
         """Clé maître de chiffrement (32 octets). Refuse de démarrer sans clé hors dev."""
         if self.auth_master_key:

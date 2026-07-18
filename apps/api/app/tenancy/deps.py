@@ -45,12 +45,11 @@ async def resolve_tenant(
     tenant = await session.scalar(select(Tenant).where(Tenant.slug == slug))
     if tenant is None or tenant.state in (TenantState.PROVISIONING, TenantState.FAILED):
         raise HTTPException(status_code=404, detail="Tenant introuvable")
+    if tenant.deleted_at is not None:
+        # Soft-delete (ADR 0002) : indistinguable d'un tenant inexistant.
+        raise HTTPException(status_code=404, detail="Tenant introuvable")
     if tenant.state is TenantState.SUSPENDED:
         raise HTTPException(status_code=403, detail="Tenant suspendu")
-    if tenant.state is TenantState.PENDING_DELETION:
-        # Effacement RGPD demandé (Phase 4 T5, D2) : inaccessible immédiatement,
-        # la destruction physique suit après le délai de grâce.
-        raise HTTPException(status_code=403, detail="Tenant en cours d'effacement")
 
     if auth is None:
         raise HTTPException(status_code=401, detail="Authentification requise")

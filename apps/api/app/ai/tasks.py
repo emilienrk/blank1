@@ -124,7 +124,7 @@ async def _run_daily_rollup() -> dict[str, int]:
         )
         return {"aggregated": aggregated, "purged": purged}
     finally:
-        # Pools asyncpg liés à leur event loop (cf. app/gdpr/tasks.py).
+        # Pools asyncpg liés à leur event loop.
         await dispose_control_engine()
 
 
