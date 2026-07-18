@@ -1,10 +1,9 @@
-"""Connexions OAuth tierces et subscriptions webhook — données du client, en
-DB TENANT (plan global §3, Phase 5 T1, décision D1).
+"""Connexions OAuth tierces et subscriptions webhook — données du client,
+scopées tenant (ADR 0001, Phase 5 T1, décision D1).
 
 Les tokens sont chiffrés via `KeyProvider` (AES-256-GCM) : AUCUN token provider
 en clair nulle part — ni en base, ni dans les logs, ni dans une réponse API
-(invariant n°1 de la phase). Vivre en DB tenant les fait couvrir gratuitement
-par l'export et l'effacement RGPD (Phase 4).
+(invariant n°1 de la phase).
 """
 
 import enum
@@ -15,7 +14,8 @@ from typing import Any
 from sqlalchemy import JSON, DateTime, Enum, ForeignKey, LargeBinary, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.tenancy.tenant_base import TenantBase
+from app.core.db import Base
+from app.tenancy.tenant_base import TenantScoped
 
 
 class ConnectorProvider(enum.StrEnum):
@@ -43,7 +43,7 @@ def _enum_values(enum_cls: type[enum.Enum]) -> list[str]:
     return [str(member.value) for member in enum_cls]
 
 
-class ConnectorConnection(TenantBase):
+class ConnectorConnection(Base, TenantScoped):
     __tablename__ = "connector_connections"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
@@ -97,7 +97,9 @@ class ConnectorConnection(TenantBase):
     )
 
 
-class ConnectorSubscription(TenantBase):
+class ConnectorSubscription(Base, TenantScoped):
+    # `tenant_id` en colonne propre (pas via jointure) : le filtre automatique est
+    # par classe, chaque table scopée porte le sien.
     __tablename__ = "connector_subscriptions"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)

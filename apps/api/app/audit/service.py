@@ -2,8 +2,9 @@
 
 `record_audit_event` écrit via la session tenant COURANTE, dans la même
 transaction que l'action auditée : impossible d'avoir l'action sans sa trace
-ou l'inverse (rollback de l'appelant → rollback de l'événement). Réutilisée
-par toutes les phases suivantes (connecteurs, modules métier).
+ou l'inverse (rollback de l'appelant → rollback de l'événement). Le `tenant_id`
+de l'événement est estampillé automatiquement par les garde-fous de session
+(ADR 0001). Réutilisée par toutes les briques (connecteurs, modules métier).
 """
 
 import uuid
@@ -12,9 +13,9 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.tenant_models import AuditEvent
-from app.tenancy.context import TenantContext
-from app.tenancy.engine_manager import get_engine_manager
+from app.tenancy.context import TenantContext, tenant_context
 from app.tenancy.models import Tenant
+from app.tenancy.session import tenant_session
 
 # L'action est une string namespacée par convention : `core.*` pour le socle,
 # `connector.*` pour les connecteurs, `<module>.*` pour les modules (le registre
@@ -58,28 +59,19 @@ async def record_audit_event_for_tenant(
     actor_user_id: uuid.UUID | None = None,
     actor_label: str = SYSTEM_ACTOR_LABEL,
 ) -> None:
-    """Écrit un événement d'audit hors contexte HTTP tenant (invitation acceptée
-    depuis la route publique, provisioning, tâches beat, §T2) : ouvre sa propre
-    session tenant et la commit seule — l'action déclenchante vit en control-plane
-    ou est déjà commitée, deux bases physiques distinctes ne peuvent pas partager
-    une transaction (nuance à l'atomicité stricte de D1, limitée aux actions
-    tenant-only comme les équipes)."""
-    ctx = TenantContext(
-        tenant_id=tenant.id,
-        slug=tenant.slug,
-        state=tenant.state,
-        db_name=tenant.db_name,
-        db_host=tenant.db_host,
-        role=None,
-    )
-    async with get_engine_manager().session(ctx) as session:
-        await record_audit_event(
-            session,
-            action=action,
-            resource_type=resource_type,
-            resource_id=resource_id,
-            payload=payload,
-            actor_user_id=actor_user_id,
-            actor_label=actor_label,
-        )
-        await session.commit()
+    """Écrit un événement d'audit hors contexte tenant posé (route publique
+    d'acceptation d'invitation, tâches beat) : pose le contexte du tenant visé,
+    ouvre sa propre session et la commit seule."""
+    ctx = TenantContext(tenant_id=tenant.id, slug=tenant.slug)
+    with tenant_context(ctx):
+        async with tenant_session() as session:
+            await record_audit_event(
+                session,
+                action=action,
+                resource_type=resource_type,
+                resource_id=resource_id,
+                payload=payload,
+                actor_user_id=actor_user_id,
+                actor_label=actor_label,
+            )
+            await session.commit()

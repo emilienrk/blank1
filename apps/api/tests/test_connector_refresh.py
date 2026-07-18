@@ -21,8 +21,8 @@ from app.connectors.tasks import refresh_expiring_tokens
 from app.connectors.tenant_models import ConnectionStatus, ConnectorConnection
 from app.core.config import Settings, get_settings
 from app.tenancy.context import tenant_context
-from app.tenancy.engine_manager import get_engine_manager
 from app.tenancy.provisioning import provision_tenant
+from app.tenancy.session import tenant_session
 from tests.conftest import requires_postgres
 from tests.connector_helpers import (
     create_connection,
@@ -115,7 +115,7 @@ async def test_invalid_grant_marks_needs_reconsent_and_audits(
 
     # Audit connector.reconsent_required émis.
     with tenant_context(ctx_for(tenant)):
-        async with get_engine_manager().session(ctx_for(tenant)) as session:
+        async with tenant_session() as session:
             actions = [e.action for e in (await session.scalars(select(AuditEvent))).all()]
             assert "connector.reconsent_required" in actions
 
@@ -169,7 +169,7 @@ async def test_on_the_fly_refresh_serialized_with_periodic(
     assert held is not None
 
     with override_provider(fake_google_manifest()), tenant_context(ctx_for(tenant)):
-        async with get_engine_manager().session(ctx_for(tenant)) as session:
+        async with tenant_session() as session:
             loaded = await session.get(ConnectorConnection, connection.id)
             assert loaded is not None
             with pytest.raises(throttle.ProviderUnavailable):

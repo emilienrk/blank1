@@ -48,22 +48,13 @@ def test_session_cookie_secure_outside_dev(monkeypatch: pytest.MonkeyPatch) -> N
     assert Settings().session_cookie_secure is True
 
 
-def test_database_urls_are_composed_never_stored(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_database_url_is_composed_never_stored(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("POSTGRES_HOST", "db.internal")
     monkeypatch.setenv("POSTGRES_PORT", "5433")
     monkeypatch.setenv("POSTGRES_USER", "svc")
     monkeypatch.setenv("POSTGRES_PASSWORD", "s3cret")
-    monkeypatch.setenv("POSTGRES_DB", "cp")
+    monkeypatch.setenv("POSTGRES_DB", "saas")
 
     settings = Settings()
 
-    assert settings.control_plane_url == "postgresql+asyncpg://svc:s3cret@db.internal:5433/cp"
-    # Alias `default` → serveur principal ; alias explicite → hôte dédié (§8.7).
-    assert (
-        settings.tenant_database_url("tenant_acme")
-        == "postgresql+asyncpg://svc:s3cret@db.internal:5433/tenant_acme"
-    )
-    assert (
-        settings.tenant_database_url("tenant_acme", db_host="pg2.internal")
-        == "postgresql+asyncpg://svc:s3cret@pg2.internal:5433/tenant_acme"
-    )
+    assert settings.database_url == "postgresql+asyncpg://svc:s3cret@db.internal:5433/saas"

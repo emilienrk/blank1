@@ -11,10 +11,10 @@ from datetime import datetime
 from sqlalchemy import DateTime, ForeignKey, Index, String, UniqueConstraint, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.db import ControlPlaneBase
+from app.core.db import Base
 
 
-class User(ControlPlaneBase):
+class User(Base):
     __tablename__ = "users"
     __table_args__ = (Index("ux_users_email_lower", text("lower(email)"), unique=True),)
 
@@ -27,7 +27,7 @@ class User(ControlPlaneBase):
     )
 
 
-class Membership(ControlPlaneBase):
+class Membership(Base):
     __tablename__ = "memberships"
     __table_args__ = (UniqueConstraint("user_id", "tenant_id", name="ux_memberships_user_tenant"),)
 

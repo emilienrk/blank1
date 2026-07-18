@@ -26,13 +26,7 @@ from tests.helpers import add_membership, create_session_token, create_user
 
 
 def _ctx(slug: str = "acme") -> TenantContext:
-    return TenantContext(
-        tenant_id=uuid.uuid4(),
-        slug=slug,
-        state=TenantState.ACTIVE,
-        db_name=f"tenant_{slug}",
-        db_host="default",
-    )
+    return TenantContext(tenant_id=uuid.uuid4(), slug=slug)
 
 
 def test_current_tenant_without_context_raises() -> None:
@@ -90,28 +84,11 @@ async def test_resolve_tenant_from_subdomain(db_env: Settings) -> None:
     async with get_control_sessionmaker()() as session:
         session.add_all(
             [
-                Tenant(
-                    slug="acme",
-                    name="ACME",
-                    db_name="acme_db_nonexistent",
-                    state=TenantState.ACTIVE,
-                ),
-                Tenant(
-                    slug="frozen",
-                    name="Frozen",
-                    db_name="frozen_db_nonexistent",
-                    state=TenantState.SUSPENDED,
-                ),
-                Tenant(
-                    slug="broken",
-                    name="Broken",
-                    db_name="broken_db_nonexistent",
-                    state=TenantState.FAILED,
-                ),
+                Tenant(slug="acme", name="ACME", state=TenantState.ACTIVE),
+                Tenant(slug="frozen", name="Frozen", state=TenantState.SUSPENDED),
                 Tenant(
                     slug="gone",
                     name="Gone",
-                    db_name="gone_db_nonexistent",
                     state=TenantState.ACTIVE,
                     deleted_at=datetime.now(UTC),
                 ),
@@ -153,9 +130,6 @@ async def test_resolve_tenant_from_subdomain(db_env: Settings) -> None:
 
         suspended = client.get("/whoami", headers={"host": "frozen.app.example.fr"})
         assert suspended.status_code == 403
-
-        failed = client.get("/whoami", headers={"host": "broken.app.example.fr"})
-        assert failed.status_code == 404
 
         # Soft-delete (ADR 0002) : indistinguable d'un tenant inexistant.
         deleted = client.get("/whoami", headers={"host": "gone.app.example.fr"})

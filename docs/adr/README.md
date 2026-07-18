@@ -30,7 +30,7 @@ Comment récupérer ce qui a été retiré, en partant du tag
 
 | ADR | Titre | Statut |
 |-----|-------|--------|
-| [0001](0001-base-unique-tenant-id.md) | Base-par-tenant → base unique + `tenant_id` | à venir (étape 3) |
+| [0001](0001-base-unique-tenant-id.md) | Base-par-tenant → base unique + `tenant_id` | accepté |
 | [0002](0002-rgpd-soft-delete.md) | RGPD à délai de grâce archivé → soft-delete | accepté |
 | [0003](0003-back-office-archive.md) | Back-office archivé — admin via CLI/SQL | accepté |
 | [0004](0004-observabilite-docker-logs.md) | Observabilité lourde archivée — `docker logs` | accepté |

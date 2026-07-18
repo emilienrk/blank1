@@ -13,7 +13,7 @@ from app.cli import app
 from app.core.config import Settings
 from app.core.db import get_control_sessionmaker
 from app.tenancy.models import Tenant, TenantState
-from tests.conftest import TENANT_HEAD_REVISION, requires_postgres
+from tests.conftest import requires_postgres
 from tests.helpers import reset_db_engines
 
 pytestmark = requires_postgres
@@ -35,11 +35,10 @@ async def test_cli_tenant_create_list_upgrade(db_env: Settings) -> None:
     assert code == 0
     assert "acme" in output
     assert "active" in output
-    assert TENANT_HEAD_REVISION in output
 
     code, output = await _invoke("db", "upgrade")
     assert code == 0, output
-    assert "2/2 base(s) migrée(s)" in output
+    assert "Base migrée" in output
 
 
 async def test_cli_create_duplicate_fails(db_env: Settings) -> None:

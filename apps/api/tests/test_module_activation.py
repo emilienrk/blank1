@@ -16,8 +16,8 @@ from app.core.config import Settings
 from app.core.db import get_control_sessionmaker
 from app.modules.sample_digest.tenant_models import SampleDigestDigest
 from app.tenancy.context import tenant_context
-from app.tenancy.engine_manager import get_engine_manager
 from app.tenancy.provisioning import provision_tenant
+from app.tenancy.session import tenant_session
 from tests.conftest import requires_postgres
 from tests.connector_helpers import create_connection, ctx_for
 from tests.helpers import reset_db_engines
@@ -55,7 +55,7 @@ async def test_enable_with_capability_activates_and_audits(db_env: Settings) -> 
 
     # Audit en DB tenant.
     with tenant_context(ctx_for(tenant)):
-        async with get_engine_manager().session(ctx_for(tenant)) as session:
+        async with tenant_session() as session:
             actions = [e.action for e in (await session.scalars(select(AuditEvent))).all()]
             assert "core.module.enabled" in actions
 
@@ -67,7 +67,7 @@ async def test_disable_keeps_tenant_data_and_stops_scheduling(db_env: Settings) 
 
     # Un digest préexistant en DB tenant (donnée du module).
     with tenant_context(ctx_for(tenant)):
-        async with get_engine_manager().session(ctx_for(tenant)) as session:
+        async with tenant_session() as session:
             session.add(SampleDigestDigest(summary="ancien", message_count=1))
             await session.commit()
 
@@ -85,14 +85,14 @@ async def test_disable_keeps_tenant_data_and_stops_scheduling(db_env: Settings) 
 
     # Données du module CONSERVÉES (décision D6).
     with tenant_context(ctx_for(tenant)):
-        async with get_engine_manager().session(ctx_for(tenant)) as session:
+        async with tenant_session() as session:
             digests = (await session.scalars(select(SampleDigestDigest))).all()
             assert len(digests) == 1
             assert digests[0].summary == "ancien"
 
     # Audit des deux transitions.
     with tenant_context(ctx_for(tenant)):
-        async with get_engine_manager().session(ctx_for(tenant)) as session:
+        async with tenant_session() as session:
             actions = [e.action for e in (await session.scalars(select(AuditEvent))).all()]
             assert "core.module.enabled" in actions
             assert "core.module.disabled" in actions

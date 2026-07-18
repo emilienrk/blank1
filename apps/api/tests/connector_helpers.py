@@ -28,8 +28,8 @@ from app.connectors.tenant_models import (
     ConnectorProvider,
 )
 from app.tenancy.context import TenantContext, tenant_context
-from app.tenancy.engine_manager import get_engine_manager
 from app.tenancy.models import Tenant
+from app.tenancy.session import tenant_session
 
 GOOGLE_SCOPES = [
     "openid",
@@ -122,14 +122,7 @@ def reset_connector_throttle() -> None:
 
 
 def ctx_for(tenant: Tenant) -> TenantContext:
-    return TenantContext(
-        tenant_id=tenant.id,
-        slug=tenant.slug,
-        state=tenant.state,
-        db_name=tenant.db_name,
-        db_host=tenant.db_host,
-        role=None,
-    )
+    return TenantContext(tenant_id=tenant.id, slug=tenant.slug)
 
 
 async def create_connection(
@@ -148,7 +141,7 @@ async def create_connection(
     """Insère une connexion (tokens chiffrés) directement en DB tenant."""
     default_scopes = GOOGLE_SCOPES if provider is ConnectorProvider.GOOGLE else MICROSOFT_SCOPES
     with tenant_context(ctx_for(tenant)):
-        async with get_engine_manager().session(ctx_for(tenant)) as session:
+        async with tenant_session() as session:
             connection = ConnectorConnection(
                 provider=provider,
                 kind=kind,
@@ -168,7 +161,7 @@ async def create_connection(
 
 async def load_connection(tenant: Tenant, connection_id: uuid.UUID) -> ConnectorConnection:
     with tenant_context(ctx_for(tenant)):
-        async with get_engine_manager().session(ctx_for(tenant)) as session:
+        async with tenant_session() as session:
             connection = await session.get(ConnectorConnection, connection_id)
             assert connection is not None
             return connection

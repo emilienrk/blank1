@@ -22,8 +22,8 @@ from app.core.config import Settings
 from app.core.db import get_control_sessionmaker
 from app.main import create_app
 from app.tenancy.context import tenant_context
-from app.tenancy.engine_manager import get_engine_manager
 from app.tenancy.provisioning import provision_tenant
+from app.tenancy.session import tenant_session
 from tests.conftest import requires_postgres
 from tests.connector_helpers import (
     create_connection,
@@ -121,7 +121,7 @@ async def test_delete_erases_tokens_even_if_remote_revoke_fails(
 
     # Audit + suppression de la route de webhook.
     with tenant_context(ctx_for(tenant)):
-        async with get_engine_manager().session(ctx_for(tenant)) as session:
+        async with tenant_session() as session:
             actions = [e.action for e in (await session.scalars(select(AuditEvent))).all()]
             assert "connector.revoked" in actions
     async with get_control_sessionmaker()() as cp:

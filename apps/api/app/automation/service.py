@@ -28,8 +28,8 @@ from app.connectors.tenant_models import ConnectionStatus, ConnectorConnection
 from app.core.db import get_control_session, get_control_sessionmaker
 from app.tenancy.context import TenantContext, tenant_context
 from app.tenancy.deps import resolve_tenant
-from app.tenancy.engine_manager import get_engine_manager
 from app.tenancy.models import Tenant
+from app.tenancy.session import tenant_session
 
 logger = structlog.get_logger()
 
@@ -54,17 +54,10 @@ def _capability_name(capability: type) -> str:
 
 async def _tenant_granted_capabilities(tenant: Tenant) -> frozenset[str]:
     """Union des capabilities consenties par les connexions ACTIVES du tenant."""
-    ctx = TenantContext(
-        tenant_id=tenant.id,
-        slug=tenant.slug,
-        state=tenant.state,
-        db_name=tenant.db_name,
-        db_host=tenant.db_host,
-        role=None,
-    )
+    ctx = TenantContext(tenant_id=tenant.id, slug=tenant.slug)
     granted: set[str] = set()
     with tenant_context(ctx):
-        async with get_engine_manager().session(ctx) as session:
+        async with tenant_session() as session:
             connections = (
                 await session.scalars(
                     select(ConnectorConnection).where(
@@ -132,10 +125,8 @@ async def enable_module(
     else:
         row.enabled = True
 
-    # Audit AVANT le commit de l'action control-plane (règle Phase 4 pour les actions
-    # control-plane : au pire un événement orphelin, jamais une action sans trace). La
-    # trace vit en DB tenant (donnée du client) : deux bases physiques distinctes, pas
-    # de transaction partagée.
+    # Audit AVANT le commit de l'action (au pire un événement orphelin, jamais une
+    # action sans trace — la trace part dans sa propre session committée seule).
     await record_audit_event_for_tenant(
         tenant,
         action="core.module.enabled",

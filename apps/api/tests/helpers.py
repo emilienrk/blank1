@@ -5,7 +5,6 @@ import uuid
 from app.auth.service import create_session, set_password
 from app.core.db import dispose_control_engine, get_control_sessionmaker
 from app.directory.models import Membership, User
-from app.tenancy.engine_manager import dispose_engine_manager
 from app.tenancy.models import Tenant, TenantState
 
 
@@ -13,7 +12,6 @@ async def reset_db_engines() -> None:
     """À appeler à CHAQUE changement de boucle d'événements (pytest ↔ TestClient) :
     les pools asyncpg sont liés à leur boucle (piège documenté au handoff)."""
     await dispose_control_engine()
-    await dispose_engine_manager()
 
 
 async def create_user(email: str, password: str | None = None) -> User:
@@ -40,12 +38,10 @@ async def add_membership(user_id: uuid.UUID, tenant_id: uuid.UUID, role: str) ->
         await session.commit()
 
 
-async def add_catalog_tenant(
-    slug: str, state: TenantState = TenantState.ACTIVE, db_name: str | None = None
-) -> Tenant:
-    """Enregistre un tenant au catalogue SANS provisionner de base (tests HTTP purs)."""
+async def add_catalog_tenant(slug: str, state: TenantState = TenantState.ACTIVE) -> Tenant:
+    """Enregistre un tenant au catalogue sans passer par le provisioning (ni audit)."""
     async with get_control_sessionmaker()() as session:
-        tenant = Tenant(slug=slug, name=slug.upper(), db_name=db_name or f"{slug}_db", state=state)
+        tenant = Tenant(slug=slug, name=slug.upper(), state=state)
         session.add(tenant)
         await session.commit()
         return tenant

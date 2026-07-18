@@ -22,8 +22,8 @@ import structlog
 
 from app.audit.service import record_audit_event
 from app.core.config import get_settings
-from app.tenancy.context import TenantContext
-from app.tenancy.engine_manager import get_engine_manager
+from app.tenancy.context import TenantContext, tenant_context
+from app.tenancy.session import tenant_session
 
 logger = structlog.get_logger()
 
@@ -98,17 +98,19 @@ async def _emit_alert_once(ctx: TenantContext, month_usage: int, quota: int) -> 
         month_usage=month_usage,
         monthly_token_quota=quota,
     )
-    # Audit en DB tenant (donnée du client) — session dédiée, committée seule :
-    # l'action déclenchante (usage IA) vit en control-plane (bases distinctes).
-    async with get_engine_manager().session(ctx) as session:
-        await record_audit_event(
-            session,
-            action="core.ai.quota_exceeded",
-            resource_type="ai_quota",
-            resource_id=f"{now:%Y-%m}",
-            payload={"month_usage": month_usage, "monthly_token_quota": quota},
-        )
-        await session.commit()
+    # Audit scopé tenant — session dédiée, committée seule : l'action déclenchante
+    # (usage IA) est déjà persistée de son côté. Le contexte est posé explicitement :
+    # l'alerte peut partir d'un chemin (rollup beat) où il ne l'est pas encore.
+    with tenant_context(ctx):
+        async with tenant_session() as session:
+            await record_audit_event(
+                session,
+                action="core.ai.quota_exceeded",
+                resource_type="ai_quota",
+                resource_id=f"{now:%Y-%m}",
+                payload={"month_usage": month_usage, "monthly_token_quota": quota},
+            )
+            await session.commit()
     return True
 
 

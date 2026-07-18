@@ -1,6 +1,6 @@
 # Point d'entrée unique : humains, CI et assistants IA passent par ces cibles.
 
-.PHONY: install dev infra api web worker lint format typecheck test openapi generate-client build smoke migrate revision-controlplane revision-tenant
+.PHONY: install dev infra api web worker lint format typecheck test openapi generate-client build smoke migrate revision
 
 install: ## Installe toutes les dépendances (Python + Node)
 	uv sync --all-packages
@@ -40,14 +40,11 @@ test:
 	uv run pytest
 	pnpm --filter web test
 
-migrate: ## Migre le control-plane + toutes les bases tenant (rapport par base)
+migrate: ## Migre la base (alembic upgrade head)
 	uv run saas db upgrade
 
-revision-controlplane: ## Nouvelle révision control-plane (make revision-controlplane m="message")
-	uv run alembic -c apps/api/alembic.controlplane.ini revision --autogenerate -m "$(m)"
-
-revision-tenant: ## Nouvelle révision du schéma tenant (make revision-tenant m="message")
-	uv run alembic -c apps/api/alembic.tenant.ini revision --autogenerate -m "$(m)"
+revision: ## Nouvelle révision de schéma (make revision m="message")
+	uv run alembic -c apps/api/alembic.ini revision --autogenerate -m "$(m)"
 
 openapi: ## Exporte openapi.json depuis l'app FastAPI (sans serveur)
 	uv run python scripts/export_openapi.py openapi.json

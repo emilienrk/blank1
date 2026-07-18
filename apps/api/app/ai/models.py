@@ -31,7 +31,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.db import ControlPlaneBase
+from app.core.db import Base
 
 
 class AIProvider(enum.StrEnum):
@@ -50,7 +50,7 @@ def _enum_values(enum_cls: type[enum.Enum]) -> list[str]:
     return [str(member.value) for member in enum_cls]
 
 
-class TenantAIPolicy(ControlPlaneBase):
+class TenantAIPolicy(Base):
     __tablename__ = "tenant_ai_policies"
 
     tenant_id: Mapped[uuid.UUID] = mapped_column(
@@ -78,7 +78,7 @@ class TenantAIPolicy(ControlPlaneBase):
     )
 
 
-class AIUsageEvent(ControlPlaneBase):
+class AIUsageEvent(Base):
     __tablename__ = "ai_usage_events"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
@@ -113,7 +113,7 @@ class AIUsageEvent(ControlPlaneBase):
     error_kind: Mapped[str | None] = mapped_column(String(50), default=None)
 
 
-class AIUsageDaily(ControlPlaneBase):
+class AIUsageDaily(Base):
     __tablename__ = "ai_usage_daily"
 
     day: Mapped[date] = mapped_column(Date(), primary_key=True)

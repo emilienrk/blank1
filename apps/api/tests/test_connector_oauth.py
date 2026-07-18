@@ -24,8 +24,8 @@ from app.core.config import Settings, get_settings
 from app.core.db import get_control_sessionmaker
 from app.main import create_app
 from app.tenancy.context import TenantContext, tenant_context
-from app.tenancy.engine_manager import get_engine_manager
 from app.tenancy.provisioning import provision_tenant
+from app.tenancy.session import tenant_session
 from tests.conftest import requires_postgres
 from tests.helpers import add_membership, create_session_token, create_user, reset_db_engines
 
@@ -136,15 +136,9 @@ async def test_callback_stores_encrypted_tokens_route_and_audit(
 
     await reset_db_engines()
     # Tokens chiffrés en DB tenant : la valeur brute n'apparaît jamais.
-    ctx = TenantContext(
-        tenant_id=tenant.id,
-        slug=tenant.slug,
-        state=tenant.state,
-        db_name=tenant.db_name,
-        db_host=tenant.db_host,
-    )
+    ctx = TenantContext(tenant_id=tenant.id, slug=tenant.slug)
     with tenant_context(ctx):
-        async with get_engine_manager().session(ctx) as session:
+        async with tenant_session() as session:
             connection = (await session.scalars(select(ConnectorConnection))).one()
             assert connection.account_label == "contact@acme.test"
             assert connection.access_token_enc != b"google-access-secret"

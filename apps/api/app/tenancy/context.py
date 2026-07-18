@@ -7,8 +7,6 @@ from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
 
-from app.tenancy.models import TenantState
-
 
 class TenantContextError(RuntimeError):
     """Levée quand du code métier s'exécute sans contexte tenant résolu."""
@@ -18,9 +16,6 @@ class TenantContextError(RuntimeError):
 class TenantContext:
     tenant_id: uuid.UUID
     slug: str
-    state: TenantState
-    db_name: str
-    db_host: str
     # Rôle du membership de l'utilisateur courant (Phase 2) — None hors HTTP
     # (CLI, tâches Celery : pas d'utilisateur).
     role: str | None = None

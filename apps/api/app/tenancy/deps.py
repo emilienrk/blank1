@@ -43,9 +43,7 @@ async def resolve_tenant(
         raise HTTPException(status_code=404, detail="Tenant introuvable")
 
     tenant = await session.scalar(select(Tenant).where(Tenant.slug == slug))
-    if tenant is None or tenant.state in (TenantState.PROVISIONING, TenantState.FAILED):
-        raise HTTPException(status_code=404, detail="Tenant introuvable")
-    if tenant.deleted_at is not None:
+    if tenant is None or tenant.deleted_at is not None:
         # Soft-delete (ADR 0002) : indistinguable d'un tenant inexistant.
         raise HTTPException(status_code=404, detail="Tenant introuvable")
     if tenant.state is TenantState.SUSPENDED:
@@ -61,14 +59,7 @@ async def resolve_tenant(
     if membership is None:
         raise HTTPException(status_code=403, detail="Accès refusé à ce tenant")
 
-    ctx = TenantContext(
-        tenant_id=tenant.id,
-        slug=tenant.slug,
-        state=tenant.state,
-        db_name=tenant.db_name,
-        db_host=tenant.db_host,
-        role=membership.role,
-    )
+    ctx = TenantContext(tenant_id=tenant.id, slug=tenant.slug, role=membership.role)
     token = push_tenant(ctx)
     structlog.contextvars.bind_contextvars(tenant=ctx.slug)
     try:

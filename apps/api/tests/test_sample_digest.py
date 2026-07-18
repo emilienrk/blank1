@@ -22,8 +22,8 @@ from app.main import create_app
 from app.modules.sample_digest import service as digest_service
 from app.modules.sample_digest.tenant_models import SampleDigestDigest
 from app.tenancy.context import tenant_context
-from app.tenancy.engine_manager import get_engine_manager
 from app.tenancy.provisioning import provision_tenant
+from app.tenancy.session import tenant_session
 from tests.ai_helpers import (
     fake_chat_response,
     install_fake_quota_valkey,
@@ -85,7 +85,7 @@ async def test_task_generates_digest_meters_and_audits(
 
     # Digest écrit en DB tenant.
     with tenant_context(ctx_for(tenant)):
-        async with get_engine_manager().session(ctx_for(tenant)) as session:
+        async with tenant_session() as session:
             digests = (await session.scalars(select(SampleDigestDigest))).all()
             assert len(digests) == 1
             assert digests[0].message_count == 3
@@ -110,7 +110,7 @@ async def test_read_route_lists_digests(db_env: Settings, monkeypatch: pytest.Mo
     member_token = await _member(tenant.id, "bob@example.com", "member")
 
     with tenant_context(ctx_for(tenant)):
-        async with get_engine_manager().session(ctx_for(tenant)) as session:
+        async with tenant_session() as session:
             session.add(SampleDigestDigest(summary="résumé du jour", message_count=2))
             await session.commit()
     await reset_db_engines()
